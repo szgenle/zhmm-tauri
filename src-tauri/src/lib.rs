@@ -1,0 +1,40 @@
+mod commands;
+mod crypto;
+mod errors;
+mod models;
+mod totp;
+mod vault;
+
+use tauri::Manager;
+use vault::VaultState;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("无法获取应用数据目录");
+            let vault_path = data_dir.join("vault.zhmm");
+            app.manage(VaultState::new(vault_path));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::vault_status,
+            commands::create_vault,
+            commands::unlock_vault,
+            commands::lock_vault,
+            commands::list_passwords,
+            commands::get_password,
+            commands::add_password,
+            commands::delete_password,
+            commands::update_password,
+            commands::get_password_history,
+            commands::generate_totp,
+            commands::parse_otpauth,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

@@ -1,0 +1,333 @@
+<script setup lang="ts">
+import { h, onMounted, reactive, ref } from "vue";
+import { NButton, NIcon, NTag, NSpace } from "naive-ui";
+import {
+  AddOutline,
+  CopyOutline,
+  CreateOutline,
+  TimeOutline,
+  TrashOutline,
+} from "@vicons/ionicons5";
+import type { DataTableColumns } from "naive-ui";
+import {
+  api,
+  type PasswordEntry,
+  type PasswordHistoryItem,
+  type PasswordInput,
+  type PasswordSummary,
+} from "../api";
+
+const message = useMessage();
+const dialog = useDialog();
+
+const searchQuery = ref("");
+const data = ref<PasswordSummary[]>([]);
+const loading = ref(false);
+
+// 编辑对话框
+const showEditDialog = ref(false);
+const editing = ref(false);
+const editingId = ref<string | null>(null); // null=新增
+const form = reactive<Required<PasswordInput>>({
+  title: "",
+  role: "个人",
+  username: "",
+  password: "",
+  phone: "",
+  email: "",
+  url: "",
+  notes: "",
+  tags: [] as string[],
+  totp_secret: "",
+  totp_algo: "",
+  totp_digits: 6,
+  totp_period: 30,
+});
+
+// 历史对话框
+const showHistoryDialog = ref(false);
+const historyTitle = ref("");
+const historyItems = ref<PasswordHistoryItem[]>([]);
+
+async function loadData() {
+  loading.value = true;
+  try {
+    data.value = await api.listPasswords();
+  } catch (e: any) {
+    message.error(`加载失败: ${e}`);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function handleCopy(row: PasswordSummary) {
+  try {
+    const entry = await api.getPassword(row.id);
+    await navigator.clipboard.writeText(entry.password);
+    message.success("密码已复制到剪贴板");
+  } catch (e: any) {
+    message.error(`复制失败: ${e}`);
+  }
+}
+
+function handleDelete(row: PasswordSummary) {
+  dialog.warning({
+    title: "确认删除",
+    content: `确定要删除"${row.title}"吗？此操作不可恢复。`,
+    positiveText: "删除",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      try {
+        await api.deletePassword(row.id);
+        message.success("已删除");
+        loadData();
+      } catch (e: any) {
+        message.error(`删除失败: ${e}`);
+      }
+    },
+  });
+}
+
+function resetForm() {
+  form.title = "";
+  form.role = "个人";
+  form.username = "";
+  form.password = "";
+  form.phone = "";
+  form.email = "";
+  form.url = "";
+  form.notes = "";
+  form.tags = [];
+  form.totp_secret = "";
+  form.totp_algo = "";
+  form.totp_digits = 6;
+  form.totp_period = 30;
+}
+
+function openAdd() {
+  resetForm();
+  editingId.value = null;
+  showEditDialog.value = true;
+}
+
+async function openEdit(row: PasswordSummary) {
+  try {
+    const e: PasswordEntry = await api.getPassword(row.id);
+    form.title = e.title;
+    form.role = e.role || "个人";
+    form.username = e.username;
+    form.password = e.password;
+    form.phone = e.phone;
+    form.email = e.email;
+    form.url = e.url;
+    form.notes = e.notes;
+    form.tags = [...e.tags];
+    form.totp_secret = e.totp_secret;
+    form.totp_algo = e.totp_algo;
+    form.totp_digits = e.totp_digits || 6;
+    form.totp_period = e.totp_period || 30;
+    editingId.value = e.id;
+    showEditDialog.value = true;
+  } catch (e: any) {
+    message.error(`加载失败: ${e}`);
+  }
+}
+
+async function handleSave() {
+  if (!form.title?.trim()) {
+    message.error("名称不能为空");
+    return;
+  }
+  editing.value = true;
+  try {
+    const payload: PasswordInput = { ...form };
+    if (editingId.value) {
+      await api.updatePassword(editingId.value, payload);
+      message.success("已更新");
+    } else {
+      await api.addPassword(payload);
+      message.success("已添加");
+    }
+    showEditDialog.value = false;
+    loadData();
+  } catch (e: any) {
+    message.error(`保存失败: ${e}`);
+  } finally {
+    editing.value = false;
+  }
+}
+
+async function openHistory(row: PasswordSummary) {
+  try {
+    historyItems.value = await api.getPasswordHistory(row.id);
+    historyTitle.value = row.title;
+    showHistoryDialog.value = true;
+  } catch (e: any) {
+    message.error(`加载历史失败: ${e}`);
+  }
+}
+
+async function copyHistory(item: PasswordHistoryItem) {
+  await navigator.clipboard.writeText(item.pwd);
+  message.success("已复制历史密码");
+}
+
+const columns: DataTableColumns<PasswordSummary> = [
+  { title: "名称", key: "title", width: 180 },
+  { title: "分类", key: "role", width: 80 },
+  { title: "用户名", key: "username", width: 160 },
+  {
+    title: "标签",
+    key: "tags",
+    render(row) {
+      if (!row.tags?.length) return "";
+      return h(
+        NSpace,
+        { size: 4 },
+        {
+          default: () =>
+            row.tags.map((t) =>
+              h(NTag, { size: "small", round: true }, { default: () => t })
+            ),
+        }
+      );
+    },
+  },
+  {
+    title: "更新时间",
+    key: "updated_at",
+    width: 170,
+    render: (row) => new Date(row.updated_at).toLocaleString(),
+  },
+  {
+    title: "操作",
+    key: "actions",
+    width: 240,
+    render(row) {
+      return h(NSpace, { size: 0 }, {
+        default: () => [
+          h(NButton, { size: "small", quaternary: true, onClick: () => handleCopy(row) },
+            { default: () => "复制", icon: () => h(NIcon, null, { default: () => h(CopyOutline) }) }),
+          h(NButton, { size: "small", quaternary: true, onClick: () => openEdit(row) },
+            { default: () => "编辑", icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) }),
+          h(NButton, { size: "small", quaternary: true, onClick: () => openHistory(row) },
+            { default: () => "历史", icon: () => h(NIcon, null, { default: () => h(TimeOutline) }) }),
+          h(NButton, { size: "small", quaternary: true, type: "error", onClick: () => handleDelete(row) },
+            { default: () => "删除", icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
+        ],
+      });
+    },
+  },
+];
+
+const roleOptions = [
+  { label: "个人", value: "个人" },
+  { label: "工作", value: "工作" },
+  { label: "其它", value: "其它" },
+];
+
+onMounted(loadData);
+</script>
+
+<template>
+  <div>
+    <n-space justify="space-between" style="margin-bottom: 16px">
+      <n-input
+        v-model:value="searchQuery"
+        placeholder="搜索密码"
+        clearable
+        style="width: 280px"
+      />
+      <n-button type="primary" @click="openAdd">
+        <template #icon>
+          <n-icon><AddOutline /></n-icon>
+        </template>
+        添加密码
+      </n-button>
+    </n-space>
+    <n-data-table
+      :columns="columns"
+      :data="data"
+      :loading="loading"
+      :bordered="false"
+      :pagination="{ pageSize: 20 }"
+    />
+
+    <!-- 新增/编辑对话框 -->
+    <n-modal
+      v-model:show="showEditDialog"
+      preset="card"
+      :title="editingId ? '编辑密码' : '添加密码'"
+      style="width: 560px"
+    >
+      <n-form label-placement="left" label-width="72">
+        <n-form-item label="名称" required>
+          <n-input v-model:value="form.title" placeholder="例如：GitHub" />
+        </n-form-item>
+        <n-form-item label="分类">
+          <n-select v-model:value="form.role" :options="roleOptions" />
+        </n-form-item>
+        <n-form-item label="用户名">
+          <n-input v-model:value="form.username" />
+        </n-form-item>
+        <n-form-item label="密码">
+          <n-input
+            v-model:value="form.password"
+            type="password"
+            show-password-on="click"
+          />
+        </n-form-item>
+        <n-form-item label="手机">
+          <n-input v-model:value="form.phone" />
+        </n-form-item>
+        <n-form-item label="邮箱">
+          <n-input v-model:value="form.email" />
+        </n-form-item>
+        <n-form-item label="网址">
+          <n-input v-model:value="form.url" placeholder="https://..." />
+        </n-form-item>
+        <n-form-item label="标签">
+          <n-dynamic-tags v-model:value="form.tags" />
+        </n-form-item>
+        <n-form-item label="备注">
+          <n-input v-model:value="form.notes" type="textarea" :rows="3" />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showEditDialog = false">取消</n-button>
+          <n-button type="primary" :loading="editing" @click="handleSave">
+            保存
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- 历史密码对话框 -->
+    <n-modal
+      v-model:show="showHistoryDialog"
+      preset="card"
+      :title="`历史密码 - ${historyTitle}`"
+      style="width: 480px"
+    >
+      <n-empty v-if="!historyItems.length" description="暂无历史密码" />
+      <n-list v-else>
+        <n-list-item v-for="(item, idx) in historyItems" :key="idx">
+          <n-space justify="space-between" align="center" style="width: 100%">
+            <div>
+              <div style="font-family: monospace">
+                {{ item.pwd }}
+              </div>
+              <div style="font-size: 12px; color: var(--n-text-color-3)">
+                替换于 {{ new Date(item.replaced_at).toLocaleString() }}
+              </div>
+            </div>
+            <n-button size="small" quaternary @click="copyHistory(item)">
+              复制
+            </n-button>
+          </n-space>
+        </n-list-item>
+      </n-list>
+    </n-modal>
+  </div>
+</template>
