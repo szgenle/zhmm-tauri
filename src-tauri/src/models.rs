@@ -15,6 +15,7 @@ pub const HISTORY_MAX: usize = 5;
 pub const VAULT_VERSION: u32 = 2;
 
 /// TOTP 算法限制
+#[allow(dead_code)]
 pub const SUPPORTED_TOTP_ALGOS: &[&str] = &["", "SHA1", "SHA256", "SHA512", "SM3"];
 
 /// 同条目内的一条历史密码

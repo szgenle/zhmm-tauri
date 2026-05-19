@@ -29,6 +29,7 @@ impl VaultState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn path(&self) -> PathBuf {
         self.path.read().clone()
     }

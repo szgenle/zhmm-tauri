@@ -15,6 +15,7 @@ pub enum AppError {
     Crypto(String),
 
     #[error("完整性校验失败")]
+    #[allow(dead_code)]
     IntegrityCheck,
 
     #[error("序列化错误: {0}")]
