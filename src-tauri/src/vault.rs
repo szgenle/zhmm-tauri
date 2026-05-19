@@ -4,12 +4,23 @@
 
 use parking_lot::RwLock;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
 
 use crate::crypto::{decrypt, encrypt, Envelope};
 use crate::errors::{AppError, AppResult};
 use crate::models::{normalize_tags, PasswordEntry, PasswordHistoryItem, PasswordInput, VaultData, HISTORY_MAX};
+
+/// 备份条目元信息（返回给前端）
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BackupInfo {
+    pub name: String,
+    pub size: u64,
+    pub created_at: String,
+}
+
+const BACKUP_DIR_NAME: &str = ".backups";
+const BACKUP_EXT: &str = "zhmm";
 
 pub struct VaultState {
     /// 密码库文件路径
@@ -262,6 +273,120 @@ impl VaultState {
         self.persist_with_cached_master()?;
         Ok(count)
     }
+
+    // ========== 本地备份管理 ==========
+
+    /// 获取备份目录路径（与 vault 文件同级）
+    fn backup_dir(&self) -> PathBuf {
+        let vault_path = self.path.read().clone();
+        vault_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join(BACKUP_DIR_NAME)
+    }
+
+    /// 创建一份本地备份（使用缓存的主密码加密）
+    pub fn create_local_backup(&self) -> AppResult<String> {
+        let master = self.master.read().clone().ok_or(AppError::Locked)?;
+        let data = self.snapshot()?;
+        let bytes = serde_json::to_vec(&data)?;
+        let env = encrypt(&bytes, &master)?;
+
+        let dir = self.backup_dir();
+        fs::create_dir_all(&dir)?;
+
+        let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let name = format!("backup_{ts}.{BACKUP_EXT}");
+        let path = dir.join(&name);
+        fs::write(&path, env.to_bytes())?;
+        Ok(name)
+    }
+
+    /// 列出所有本地备份（按时间倒序）
+    pub fn list_local_backups(&self) -> AppResult<Vec<BackupInfo>> {
+        let dir = self.backup_dir();
+        if !dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut items: Vec<BackupInfo> = Vec::new();
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some(BACKUP_EXT) {
+                continue;
+            }
+            let meta = entry.metadata()?;
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let created_at = meta
+                .modified()
+                .or_else(|_| meta.created())
+                .map(|t| {
+                    let dt: chrono::DateTime<chrono::Local> = t.into();
+                    dt.format("%Y-%m-%d %H:%M:%S").to_string()
+                })
+                .unwrap_or_default();
+            items.push(BackupInfo {
+                name,
+                size: meta.len(),
+                created_at,
+            });
+        }
+        // 按名称倒序（名称含时间戳，倒序即最新在前）
+        items.sort_by(|a, b| b.name.cmp(&a.name));
+        Ok(items)
+    }
+
+    /// 删除指定本地备份
+    pub fn delete_local_backup(&self, name: &str) -> AppResult<()> {
+        let path = self.backup_dir().join(name);
+        if !path.exists() {
+            return Err(AppError::NotFound);
+        }
+        fs::remove_file(&path)?;
+        Ok(())
+    }
+
+    /// 从本地备份恢复（使用缓存主密码解密）
+    pub fn restore_local_backup(&self, name: &str) -> AppResult<()> {
+        let master = self.master.read().clone().ok_or(AppError::Locked)?;
+        let path = self.backup_dir().join(name);
+        if !path.exists() {
+            return Err(AppError::Other(format!("备份不存在: {name}")));
+        }
+        let bytes = fs::read(&path)?;
+        let env = Envelope::from_bytes(&bytes)?;
+        let plain = decrypt(&env, &master)?;
+        let mut data: VaultData = serde_json::from_slice(&plain)
+            .map_err(|e| AppError::Crypto(format!("备份 json: {e}")))?;
+        data.upgrade();
+        {
+            let mut guard = self.data.write();
+            *guard = Some(data);
+        }
+        self.persist_with_cached_master()
+    }
+
+    /// 清理备份：保留最新 keep 个，删除多余的，返回删除数量
+    pub fn cleanup_backups(&self, keep: usize) -> AppResult<u32> {
+        let items = self.list_local_backups()?;
+        if items.len() <= keep {
+            return Ok(0);
+        }
+        let mut removed = 0u32;
+        for item in items.iter().skip(keep) {
+            let path = self.backup_dir().join(&item.name);
+            if fs::remove_file(&path).is_ok() {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
+    // ========== 内部方法 ==========
 
     fn write_envelope(&self, env: &Envelope) -> AppResult<()> {
         let path = self.path.read().clone();

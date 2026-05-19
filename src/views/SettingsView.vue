@@ -3,6 +3,7 @@ import { ref, watch } from "vue";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { api } from "../api";
 import { settings, saveSettings } from "../settings";
+import BackupListDialog from "../components/BackupListDialog.vue";
 
 const message = useMessage();
 const dialog = useDialog();
@@ -48,6 +49,7 @@ async function applySettings() {
 // 加密备份/恢复对话框
 const showBackupDialog = ref(false);
 const backupMode = ref<"backup" | "restore">("backup");
+const showBackupListDialog = ref(false);
 const backupPath = ref("");
 const backupPassword = ref("");
 
@@ -195,6 +197,7 @@ async function confirmBackup() {
         <n-space>
           <n-button type="primary" :disabled="busy" @click="startBackup">加密备份</n-button>
           <n-button type="warning" :disabled="busy" @click="startRestore">恢复备份</n-button>
+          <n-button :disabled="busy" @click="showBackupListDialog = true">备份管理</n-button>
         </n-space>
         <n-text depth="3" style="font-size: 12px">
           加密备份保留所有信息（含 TOTP 密钥与历史），可使用与主密码不同的备份密码。
@@ -234,5 +237,6 @@ async function confirmBackup() {
         </n-space>
       </template>
     </n-modal>
+    <BackupListDialog v-model:show="showBackupListDialog" />
   </div>
 </template>

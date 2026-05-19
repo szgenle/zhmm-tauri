@@ -120,6 +120,22 @@ export const api = {
   listRoles(): Promise<string[]> {
     return invoke("list_roles");
   },
+  // 本地备份管理
+  createLocalBackup(): Promise<string> {
+    return invoke("create_local_backup");
+  },
+  listLocalBackups(): Promise<BackupInfo[]> {
+    return invoke("list_local_backups");
+  },
+  deleteLocalBackup(name: string): Promise<void> {
+    return invoke("delete_local_backup", { name });
+  },
+  restoreLocalBackup(name: string): Promise<void> {
+    return invoke("restore_local_backup", { name });
+  },
+  cleanupBackups(keep: number): Promise<number> {
+    return invoke("cleanup_backups", { keep });
+  },
 };
 
 export interface TotpCode {
@@ -140,4 +156,10 @@ export interface AppSettings {
   theme: string; // "auto" | "light" | "dark"
   auto_lock_minutes: number; // 0 = 不自动锁定
   clipboard_clear_seconds: number; // 0 = 不清空
+}
+
+export interface BackupInfo {
+  name: string;
+  size: number;
+  created_at: string;
 }

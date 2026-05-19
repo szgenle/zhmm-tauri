@@ -173,3 +173,30 @@ pub fn update_settings(
 pub fn list_roles(state: State<'_, VaultState>) -> AppResult<Vec<String>> {
     state.roles()
 }
+
+// ========== 本地备份管理 ==========
+
+#[tauri::command]
+pub fn create_local_backup(state: State<'_, VaultState>) -> AppResult<String> {
+    state.create_local_backup()
+}
+
+#[tauri::command]
+pub fn list_local_backups(state: State<'_, VaultState>) -> AppResult<Vec<crate::vault::BackupInfo>> {
+    state.list_local_backups()
+}
+
+#[tauri::command]
+pub fn delete_local_backup(name: String, state: State<'_, VaultState>) -> AppResult<()> {
+    state.delete_local_backup(&name)
+}
+
+#[tauri::command]
+pub fn restore_local_backup(name: String, state: State<'_, VaultState>) -> AppResult<()> {
+    state.restore_local_backup(&name)
+}
+
+#[tauri::command]
+pub fn cleanup_backups(keep: usize, state: State<'_, VaultState>) -> AppResult<u32> {
+    state.cleanup_backups(keep)
+}
