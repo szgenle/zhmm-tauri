@@ -54,7 +54,7 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="login-page">
+  <n-layout class="login-page">
     <n-card class="login-card" :bordered="false">
       <div class="logo">
         <n-icon size="48" :depth="3"><ShieldCheckmarkOutline /></n-icon>
@@ -97,7 +97,7 @@ async function handleSubmit() {
         </n-form>
       </n-spin>
     </n-card>
-  </div>
+  </n-layout>
 </template>
 
 <style scoped>
@@ -105,7 +105,7 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  min-height: 100vh;
   width: 100vw;
 }
 .login-card {

@@ -2,6 +2,7 @@
  * 全局共享的应用设置（reactive，模块单例）
  */
 import { reactive } from "vue";
+import { writeText, clear } from "@tauri-apps/plugin-clipboard-manager";
 import { api, type AppSettings } from "./api";
 
 export const settings = reactive<AppSettings>({
@@ -36,26 +37,23 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<void> {
 /**
  * 复制后定时清空剪贴板。
  *
- * 由于 Tauri webview 默认禁止 navigator.clipboard.readText()，无法通过比对当前
- * 剪贴板内容判断是否被我们写入；改为模块级 token 模式：每次写入生成新 token，
- * 定时器触发时只有 token 仍是当前的（中间没有再次走过本函数）才执行清空。
- * 这样能避免连续复制相互打架，但若用户在外部复制了别的内容，仍可能被一并清空，
- * 这是为了在 Tauri 环境下保证“到期一定清空”的安全语义所做的折衷。
+ * 使用 @tauri-apps/plugin-clipboard-manager 直接操作系统剪贴板，
+ * 避免 navigator.clipboard 在 Tauri webview 中的权限问题。
+ * 使用 token 模式防止连续复制时早期的定时器误清后续复制的内容。
  */
 let __clipboardToken = 0;
 
-export function copyAndScheduleClear(text: string): Promise<void> {
+export async function copyAndScheduleClear(text: string): Promise<void> {
   const token = ++__clipboardToken;
-  return navigator.clipboard.writeText(text).then(() => {
-    const sec = settings.clipboard_clear_seconds;
-    if (sec <= 0) return;
-    window.setTimeout(async () => {
-      if (token !== __clipboardToken) return; // 期间又有新的复制，交给后来的定时器处理
-      try {
-        await navigator.clipboard.writeText("");
-      } catch {
-        // 写入失败忽略
-      }
-    }, sec * 1000);
-  });
+  await writeText(text);
+  const sec = settings.clipboard_clear_seconds;
+  if (sec <= 0) return;
+  window.setTimeout(async () => {
+    if (token !== __clipboardToken) return; // 期间又有新的复制，交给后来的定时器处理
+    try {
+      await clear();
+    } catch {
+      // 清空失败忽略
+    }
+  }, sec * 1000);
 }
