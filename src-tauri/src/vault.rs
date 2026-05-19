@@ -274,6 +274,117 @@ impl VaultState {
         Ok(count)
     }
 
+    // ========== 标签管理 ==========
+
+    /// 统计所有标签使用次数
+    pub fn collect_tag_counts(&self) -> AppResult<Vec<(String, usize)>> {
+        let guard = self.data.read();
+        let data = guard.as_ref().ok_or(AppError::Locked)?;
+        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for entry in &data.entries {
+            for tag in &entry.tags {
+                if !tag.is_empty() {
+                    *counts.entry(tag.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+        let mut result: Vec<(String, usize)> = counts.into_iter().collect();
+        // 按使用次数降序，同次数按字母升序
+        result.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        Ok(result)
+    }
+
+    /// 重命名标签（含合并去重）
+    pub fn rename_tag(&self, old: &str, new: &str) -> AppResult<usize> {
+        let old_n = old.trim();
+        let new_n = new.trim();
+        if old_n.is_empty() || new_n.is_empty() || old_n == new_n {
+            return Ok(0);
+        }
+        let mut affected = 0;
+        {
+            let mut guard = self.data.write();
+            let data = guard.as_mut().ok_or(AppError::Locked)?;
+            for entry in &mut data.entries {
+                if entry.tags.contains(&old_n.to_string()) {
+                    // 替换 old -> new
+                    entry.tags = entry.tags.iter()
+                        .map(|t| if t == old_n { new_n.to_string() } else { t.clone() })
+                        .collect();
+                    // 去重
+                    entry.tags = normalize_tags(&entry.tags);
+                    entry.updated_at = chrono::Utc::now();
+                    affected += 1;
+                }
+            }
+        }
+        if affected > 0 {
+            self.persist_with_cached_master()?;
+        }
+        Ok(affected)
+    }
+
+    /// 删除标签
+    pub fn delete_tag(&self, tag: &str) -> AppResult<usize> {
+        let target = tag.trim();
+        if target.is_empty() {
+            return Ok(0);
+        }
+        let mut affected = 0;
+        {
+            let mut guard = self.data.write();
+            let data = guard.as_mut().ok_or(AppError::Locked)?;
+            for entry in &mut data.entries {
+                if entry.tags.contains(&target.to_string()) {
+                    entry.tags.retain(|t| t != target);
+                    entry.updated_at = chrono::Utc::now();
+                    affected += 1;
+                }
+            }
+        }
+        if affected > 0 {
+            self.persist_with_cached_master()?;
+        }
+        Ok(affected)
+    }
+
+    // ========== 密码历史回滚 ==========
+
+    /// 将历史密码恢复为当前密码；当前密码压入历史栈顶
+    pub fn rollback_password(&self, id: &str, history_index: usize) -> AppResult<PasswordEntry> {
+        let updated;
+        {
+            let mut guard = self.data.write();
+            let data = guard.as_mut().ok_or(AppError::Locked)?;
+            let entry = data
+                .entries
+                .iter_mut()
+                .find(|e| e.id == id)
+                .ok_or(AppError::NotFound)?;
+            if history_index >= entry.history.len() {
+                return Err(AppError::Invalid("历史索引超出范围".into()));
+            }
+            let target = entry.history.remove(history_index);
+            let current_pwd = std::mem::take(&mut entry.password);
+            // 当前密码非空则压入栈顶
+            if !current_pwd.is_empty() {
+                entry.history.insert(0, PasswordHistoryItem::new(current_pwd));
+            }
+            // 超出上限截断
+            if entry.history.len() > HISTORY_MAX {
+                for h in entry.history.drain(HISTORY_MAX..) {
+                    let mut p = h.pwd;
+                    zeroize::Zeroize::zeroize(&mut p);
+                }
+            }
+            entry.password = target.pwd;
+            entry.updated_at = chrono::Utc::now();
+            updated = entry.clone();
+        }
+        self.persist_with_cached_master()?;
+        Ok(updated)
+    }
+
     // ========== 本地备份管理 ==========
 
     /// 获取备份目录路径（与 vault 文件同级）

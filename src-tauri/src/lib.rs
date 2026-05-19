@@ -5,6 +5,7 @@ mod io_json;
 mod io_xlsx;
 mod models;
 mod settings;
+mod site_catalog;
 mod totp;
 mod vault;
 
@@ -54,6 +55,12 @@ pub fn run() {
             commands::delete_local_backup,
             commands::restore_local_backup,
             commands::cleanup_backups,
+            commands::collect_tag_counts,
+            commands::rename_tag,
+            commands::delete_tag,
+            commands::rollback_password,
+            commands::list_site_catalog,
+            commands::suggest_site,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

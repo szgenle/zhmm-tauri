@@ -4,6 +4,8 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import { api } from "../api";
 import { settings, saveSettings } from "../settings";
 import BackupListDialog from "../components/BackupListDialog.vue";
+import TagManagementDialog from "../components/TagManagementDialog.vue";
+import SiteCatalogDialog from "../components/SiteCatalogDialog.vue";
 
 const message = useMessage();
 const dialog = useDialog();
@@ -50,6 +52,8 @@ async function applySettings() {
 const showBackupDialog = ref(false);
 const backupMode = ref<"backup" | "restore">("backup");
 const showBackupListDialog = ref(false);
+const showTagManagement = ref(false);
+const showSiteCatalog = ref(false);
 const backupPath = ref("");
 const backupPassword = ref("");
 
@@ -202,6 +206,14 @@ async function confirmBackup() {
         <n-text depth="3" style="font-size: 12px">
           加密备份保留所有信息（含 TOTP 密钥与历史），可使用与主密码不同的备份密码。
         </n-text>
+        <n-divider />
+        <n-space>
+          <n-button @click="showTagManagement = true">标签管理</n-button>
+          <n-button @click="showSiteCatalog = true">网站词典</n-button>
+        </n-space>
+        <n-text depth="3" style="font-size: 12px">
+          标签管理支持重命名和删除；网站词典可查看内置的离线站点匹配规则。
+        </n-text>
       </n-space>
     </n-card>
     <n-card title="关于">
@@ -238,5 +250,7 @@ async function confirmBackup() {
       </template>
     </n-modal>
     <BackupListDialog v-model:show="showBackupListDialog" />
+    <TagManagementDialog v-model:show="showTagManagement" @changed="() => {}" />
+    <SiteCatalogDialog v-model:show="showSiteCatalog" />
   </div>
 </template>

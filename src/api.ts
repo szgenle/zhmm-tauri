@@ -136,6 +136,27 @@ export const api = {
   cleanupBackups(keep: number): Promise<number> {
     return invoke("cleanup_backups", { keep });
   },
+  // 标签管理
+  collectTagCounts(): Promise<TagCount[]> {
+    return invoke("collect_tag_counts");
+  },
+  renameTag(old: string, newTag: string): Promise<number> {
+    return invoke("rename_tag", { old, new: newTag });
+  },
+  deleteTag(tag: string): Promise<number> {
+    return invoke("delete_tag", { tag });
+  },
+  // 密码历史回滚
+  rollbackPassword(id: string, historyIndex: number): Promise<PasswordEntry> {
+    return invoke("rollback_password", { id, historyIndex });
+  },
+  // 站点词典
+  listSiteCatalog(): Promise<SiteCatalogEntry[]> {
+    return invoke("list_site_catalog");
+  },
+  suggestSite(urlOrHost: string): Promise<SiteSuggestion> {
+    return invoke("suggest_site", { urlOrHost });
+  },
 };
 
 export interface TotpCode {
@@ -162,4 +183,21 @@ export interface BackupInfo {
   name: string;
   size: number;
   created_at: string;
+}
+
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+export interface SiteCatalogEntry {
+  host: string;
+  name: string;
+  tags: string[];
+}
+
+export interface SiteSuggestion {
+  name: string;
+  tags: string[];
+  matched: string;
 }

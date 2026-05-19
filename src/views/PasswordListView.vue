@@ -6,6 +6,7 @@ import {
   CopyOutline,
   CreateOutline,
   DiceOutline,
+  EyeOutline,
   OpenOutline,
   TimeOutline,
   TrashOutline,
@@ -89,7 +90,40 @@ const form = reactive<Required<PasswordInput>>({
 // 历史对话框
 const showHistoryDialog = ref(false);
 const historyTitle = ref("");
+const historyId = ref("");
 const historyItems = ref<PasswordHistoryItem[]>([]);
+const historyRevealed = ref<Set<number>>(new Set());
+
+// 密码明文定时隐藏
+const revealedPasswords = ref<Map<string, string>>(new Map());
+const revealTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+const REVEAL_DURATION = 10; // 秒
+
+function revealPassword(row: PasswordSummary) {
+  // 如果已显示，则隐藏
+  if (revealedPasswords.value.has(row.id)) {
+    hidePassword(row.id);
+    return;
+  }
+  api.getPassword(row.id).then((entry) => {
+    revealedPasswords.value.set(row.id, entry.password);
+    // 定时自动隐藏
+    const timer = setTimeout(() => hidePassword(row.id), REVEAL_DURATION * 1000);
+    revealTimers.set(row.id, timer);
+    message.info(`密码已显示，${REVEAL_DURATION}秒后自动隐藏`);
+  }).catch((e: any) => {
+    message.error(`获取密码失败: ${e}`);
+  });
+}
+
+function hidePassword(id: string) {
+  revealedPasswords.value.delete(id);
+  const timer = revealTimers.get(id);
+  if (timer) {
+    clearTimeout(timer);
+    revealTimers.delete(id);
+  }
+}
 
 // 随机密码对话框
 const showRandomPwdDialog = ref(false);
@@ -222,15 +256,46 @@ async function openHistory(row: PasswordSummary) {
   try {
     historyItems.value = await api.getPasswordHistory(row.id);
     historyTitle.value = row.title;
+    historyId.value = row.id;
+    historyRevealed.value = new Set();
     showHistoryDialog.value = true;
   } catch (e: any) {
     message.error(`加载历史失败: ${e}`);
   }
 }
 
+function toggleHistoryReveal(idx: number) {
+  const s = new Set(historyRevealed.value);
+  if (s.has(idx)) {
+    s.delete(idx);
+  } else {
+    s.add(idx);
+  }
+  historyRevealed.value = s;
+}
+
 async function copyHistory(item: PasswordHistoryItem) {
   await copyAndScheduleClear(item.pwd);
   message.success("已复制历史密码");
+}
+
+function rollbackHistory(idx: number) {
+  dialog.warning({
+    title: "确认恢复",
+    content: "将该历史密码恢复为当前密码？\n当前密码会被压回历史栈顶，可再次回滚。",
+    positiveText: "恢复",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      try {
+        await api.rollbackPassword(historyId.value, idx);
+        message.success("密码已回滚到历史版本");
+        showHistoryDialog.value = false;
+        loadData();
+      } catch (e: any) {
+        message.error(`回滚失败: ${e}`);
+      }
+    },
+  });
 }
 
 // 粘贴 otpauth URI 自动填充
@@ -255,7 +320,21 @@ async function importOtpauth() {
 }
 
 const columns: DataTableColumns<PasswordSummary> = [
-  { title: "名称", key: "title", width: 180 },
+  {
+    title: "名称",
+    key: "title",
+    width: 180,
+    render(row) {
+      const pwd = revealedPasswords.value.get(row.id);
+      if (pwd) {
+        return h('div', {}, [
+          h('div', {}, row.title),
+          h('div', { style: 'font-family: monospace; font-size: 12px; color: var(--n-text-color-2); margin-top: 2px' }, pwd),
+        ]);
+      }
+      return row.title;
+    },
+  },
   { title: "分类", key: "role", width: 80 },
   { title: "用户名", key: "username", width: 160 },
   {
@@ -293,12 +372,14 @@ const columns: DataTableColumns<PasswordSummary> = [
   {
     title: "操作",
     key: "actions",
-    width: 280,
+    width: 340,
     render(row) {
       return h(NSpace, { size: 0 }, {
         default: () => [
           h(NButton, { size: "small", quaternary: true, onClick: () => handleCopy(row) },
             { default: () => "复制", icon: () => h(NIcon, null, { default: () => h(CopyOutline) }) }),
+          h(NButton, { size: "small", quaternary: true, type: revealedPasswords.value.has(row.id) ? 'warning' : 'default', onClick: () => revealPassword(row) },
+            { default: () => revealedPasswords.value.has(row.id) ? "隐藏" : "显示", icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }),
           h(NButton, { size: "small", quaternary: true, onClick: () => openEdit(row) },
             { default: () => "编辑", icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) }),
           ...(row.url ? [h(NButton, { size: "small", quaternary: true, onClick: () => handleOpenUrl(row) },
@@ -459,23 +540,34 @@ onMounted(loadData);
       v-model:show="showHistoryDialog"
       preset="card"
       :title="`历史密码 - ${historyTitle}`"
-      style="width: 480px"
+      style="width: 560px"
     >
+      <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 12px">
+        以下为该条目的历史密码版本（最新在前，最多 5 条）。
+      </n-text>
       <n-empty v-if="!historyItems.length" description="暂无历史密码" />
       <n-list v-else>
         <n-list-item v-for="(item, idx) in historyItems" :key="idx">
           <n-space justify="space-between" align="center" style="width: 100%">
             <div>
               <div style="font-family: monospace">
-                {{ item.pwd }}
+                {{ historyRevealed.has(idx) ? item.pwd : '••••••••' }}
               </div>
               <div style="font-size: 12px; color: var(--n-text-color-3)">
                 替换于 {{ new Date(item.replaced_at).toLocaleString() }}
               </div>
             </div>
-            <n-button size="small" quaternary @click="copyHistory(item)">
-              复制
-            </n-button>
+            <n-space :size="4">
+              <n-button size="small" quaternary @click="toggleHistoryReveal(idx)">
+                {{ historyRevealed.has(idx) ? '隐藏' : '显示' }}
+              </n-button>
+              <n-button size="small" quaternary @click="copyHistory(item)">
+                复制
+              </n-button>
+              <n-button size="small" quaternary type="warning" @click="rollbackHistory(idx)">
+                恢复
+              </n-button>
+            </n-space>
           </n-space>
         </n-list-item>
       </n-list>

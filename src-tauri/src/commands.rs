@@ -9,6 +9,7 @@ use crate::io_json;
 use crate::io_xlsx;
 use crate::models::{PasswordEntry, PasswordHistoryItem, PasswordInput, PasswordSummary};
 use crate::settings::{AppSettings, SettingsState};
+use crate::site_catalog;
 use crate::totp::{self, OtpAuthParams};
 use crate::vault::VaultState;
 
@@ -199,4 +200,51 @@ pub fn restore_local_backup(name: String, state: State<'_, VaultState>) -> AppRe
 #[tauri::command]
 pub fn cleanup_backups(keep: usize, state: State<'_, VaultState>) -> AppResult<u32> {
     state.cleanup_backups(keep)
+}
+
+// ========== 标签管理 ==========
+
+#[derive(serde::Serialize)]
+pub struct TagCount {
+    pub tag: String,
+    pub count: usize,
+}
+
+#[tauri::command]
+pub fn collect_tag_counts(state: State<'_, VaultState>) -> AppResult<Vec<TagCount>> {
+    let counts = state.collect_tag_counts()?;
+    Ok(counts.into_iter().map(|(tag, count)| TagCount { tag, count }).collect())
+}
+
+#[tauri::command]
+pub fn rename_tag(old: String, new: String, state: State<'_, VaultState>) -> AppResult<usize> {
+    state.rename_tag(&old, &new)
+}
+
+#[tauri::command]
+pub fn delete_tag(tag: String, state: State<'_, VaultState>) -> AppResult<usize> {
+    state.delete_tag(&tag)
+}
+
+// ========== 密码历史回滚 ==========
+
+#[tauri::command]
+pub fn rollback_password(
+    id: String,
+    history_index: usize,
+    state: State<'_, VaultState>,
+) -> AppResult<PasswordEntry> {
+    state.rollback_password(&id, history_index)
+}
+
+// ========== 站点词典 ==========
+
+#[tauri::command]
+pub fn list_site_catalog() -> Vec<site_catalog::SiteCatalogEntry> {
+    site_catalog::all_entries()
+}
+
+#[tauri::command]
+pub fn suggest_site(url_or_host: String) -> site_catalog::SiteSuggestion {
+    site_catalog::suggest(&url_or_host)
 }
