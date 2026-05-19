@@ -215,6 +215,46 @@ impl VaultState {
         self.persist_with_cached_master()
     }
 
+    /// 快照当前 VaultData（加密备份用）
+    pub fn snapshot(&self) -> AppResult<VaultData> {
+        let guard = self.data.read();
+        let data = guard.as_ref().ok_or(AppError::Locked)?;
+        Ok(data.clone())
+    }
+
+    /// 以给定 VaultData 完全替换当前（恢复备份用）
+    pub fn replace(&self, mut data: VaultData) -> AppResult<()> {
+        data.upgrade();
+        // 重生成 id 这里不做——备份本身保留 id
+        {
+            let mut guard = self.data.write();
+            *guard = Some(data);
+        }
+        self.persist_with_cached_master()
+    }
+
+    /// 追加一批条目（导入 xlsx 用，id 重生成避免冲突）
+    pub fn extend_entries(&self, mut entries: Vec<PasswordEntry>) -> AppResult<usize> {
+        let count = entries.len();
+        {
+            let mut guard = self.data.write();
+            let data = guard.as_mut().ok_or(AppError::Locked)?;
+            for e in entries.iter_mut() {
+                // 重生 UUID、保证唯一
+                e.id = uuid::Uuid::new_v4().to_string();
+                if e.role.is_empty() {
+                    e.role = crate::models::DEFAULT_ROLE.to_string();
+                }
+                if !data.roles.iter().any(|r| r == &e.role) {
+                    data.roles.push(e.role.clone());
+                }
+            }
+            data.entries.extend(entries);
+        }
+        self.persist_with_cached_master()?;
+        Ok(count)
+    }
+
     fn write_envelope(&self, env: &Envelope) -> AppResult<()> {
         let path = self.path.read().clone();
         if let Some(parent) = path.parent() {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, ref } from "vue";
+import { computed, h, onMounted, onUnmounted, ref } from "vue";
 import { NIcon } from "naive-ui";
 import { useRoute, useRouter, RouterLink } from "vue-router";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@vicons/ionicons5";
 import type { MenuOption } from "naive-ui";
 import { api } from "../api";
+import { settings } from "../settings";
 
 const route = useRoute();
 const router = useRouter();
@@ -42,6 +43,42 @@ async function handleLock() {
     message.error(`锁定失败: ${e}`);
   }
 }
+
+// 空闲自动锁定
+let idleTimer: number | null = null;
+function resetIdle() {
+  if (idleTimer != null) window.clearTimeout(idleTimer);
+  const minutes = settings.auto_lock_minutes;
+  if (!minutes || minutes <= 0) return;
+  idleTimer = window.setTimeout(async () => {
+    try {
+      await api.lockVault();
+      router.push("/login");
+    } catch {
+      // 已锁定或路由切换下志静默
+    }
+  }, minutes * 60 * 1000);
+}
+const idleEvents: (keyof DocumentEventMap)[] = [
+  "mousemove",
+  "mousedown",
+  "keydown",
+  "wheel",
+  "touchstart",
+];
+function handleVisibility() {
+  if (document.visibilityState === "visible") resetIdle();
+}
+onMounted(() => {
+  resetIdle();
+  for (const ev of idleEvents) document.addEventListener(ev, resetIdle, { passive: true });
+  document.addEventListener("visibilitychange", handleVisibility);
+});
+onUnmounted(() => {
+  if (idleTimer != null) window.clearTimeout(idleTimer);
+  for (const ev of idleEvents) document.removeEventListener(ev, resetIdle);
+  document.removeEventListener("visibilitychange", handleVisibility);
+});
 </script>
 
 <template>

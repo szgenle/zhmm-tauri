@@ -151,13 +151,15 @@ impl VaultData {
     }
 }
 
-/// 列表展示的轻量视图，不含密码与 TOTP secret
+/// 列表展示的轻量视图，不含密码 / TOTP secret / notes
 #[derive(Debug, Clone, Serialize)]
 pub struct PasswordSummary {
     pub id: String,
     pub title: String,
     pub role: String,
     pub username: String,
+    pub phone: String,
+    pub email: String,
     pub url: String,
     pub tags: Vec<String>,
     pub has_totp: bool,
@@ -171,6 +173,8 @@ impl From<&PasswordEntry> for PasswordSummary {
             title: e.title.clone(),
             role: e.role.clone(),
             username: e.username.clone(),
+            phone: e.phone.clone(),
+            email: e.email.clone(),
             url: e.url.clone(),
             tags: e.tags.clone(),
             has_totp: !e.totp_secret.is_empty(),

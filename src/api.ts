@@ -18,6 +18,8 @@ export interface PasswordSummary {
   title: string;
   role: string;
   username: string;
+  phone: string;
+  email: string;
   url: string;
   tags: string[];
   has_totp: boolean;
@@ -91,4 +93,48 @@ export const api = {
   getPasswordHistory(id: string): Promise<PasswordHistoryItem[]> {
     return invoke("get_password_history", { id });
   },
+  generateTotp(id: string): Promise<TotpCode> {
+    return invoke("generate_totp", { id });
+  },
+  parseOtpauth(uri: string): Promise<OtpAuthParams> {
+    return invoke("parse_otpauth", { uri });
+  },
+  exportXlsx(path: string): Promise<void> {
+    return invoke("export_xlsx", { path });
+  },
+  importXlsx(path: string): Promise<number> {
+    return invoke("import_xlsx", { path });
+  },
+  backupToFile(path: string, backupPassword: string): Promise<void> {
+    return invoke("backup_to_file", { path, backupPassword });
+  },
+  restoreFromFile(path: string, backupPassword: string): Promise<void> {
+    return invoke("restore_from_file", { path, backupPassword });
+  },
+  getSettings(): Promise<AppSettings> {
+    return invoke("get_settings");
+  },
+  updateSettings(newSettings: AppSettings): Promise<AppSettings> {
+    return invoke("update_settings", { newSettings });
+  },
 };
+
+export interface TotpCode {
+  code: string;
+  remaining_seconds: number;
+}
+
+export interface OtpAuthParams {
+  secret: string;
+  algo: string;
+  digits: number;
+  period: number;
+  label: string;
+  issuer: string;
+}
+
+export interface AppSettings {
+  theme: string; // "auto" | "light" | "dark"
+  auto_lock_minutes: number; // 0 = 不自动锁定
+  clipboard_clear_seconds: number; // 0 = 不清空
+}

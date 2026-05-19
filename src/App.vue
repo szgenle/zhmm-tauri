@@ -1,18 +1,26 @@
 <script setup lang="ts">
 import { darkTheme, lightTheme, zhCN, dateZhCN } from "naive-ui";
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { settings, loadSettings } from "./settings";
 
-const isDark = ref(false);
+const sysIsDark = ref(false);
+
+const isDark = computed(() => {
+  if (settings.theme === "dark") return true;
+  if (settings.theme === "light") return false;
+  return sysIsDark.value; // auto
+});
 const theme = computed(() => (isDark.value ? darkTheme : lightTheme));
 
 const mql = window.matchMedia("(prefers-color-scheme: dark)");
 const handleChange = (e: MediaQueryListEvent) => {
-  isDark.value = e.matches;
+  sysIsDark.value = e.matches;
 };
 
-onMounted(() => {
-  isDark.value = mql.matches;
+onMounted(async () => {
+  sysIsDark.value = mql.matches;
   mql.addEventListener("change", handleChange);
+  await loadSettings();
 });
 
 onUnmounted(() => {

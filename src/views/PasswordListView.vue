@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onMounted, reactive, ref } from "vue";
+import { computed, h, onMounted, reactive, ref } from "vue";
 import { NButton, NIcon, NTag, NSpace } from "naive-ui";
 import {
   AddOutline,
@@ -16,6 +16,8 @@ import {
   type PasswordInput,
   type PasswordSummary,
 } from "../api";
+import TotpCell from "../components/TotpCell.vue";
+import { copyAndScheduleClear } from "../settings";
 
 const message = useMessage();
 const dialog = useDialog();
@@ -23,6 +25,31 @@ const dialog = useDialog();
 const searchQuery = ref("");
 const data = ref<PasswordSummary[]>([]);
 const loading = ref(false);
+
+/**
+ * 字符串规范化：去首尾空白 + NFKC + 转小写
+ * 与 Python 版 unicodedata.normalize('NFKC') + casefold() 一致
+ */
+function normalize(s: string): string {
+  return (s || "").trim().normalize("NFKC").toLowerCase();
+}
+
+const filtered = computed<PasswordSummary[]>(() => {
+  const q = normalize(searchQuery.value);
+  if (!q) return data.value;
+  return data.value.filter((row) => {
+    const fields = [
+      row.title,
+      row.role,
+      row.username,
+      row.phone,
+      row.email,
+      row.url,
+      ...(row.tags || []),
+    ];
+    return fields.some((f) => normalize(String(f || "")).includes(q));
+  });
+});
 
 // 编辑对话框
 const showEditDialog = ref(false);
@@ -63,7 +90,7 @@ async function loadData() {
 async function handleCopy(row: PasswordSummary) {
   try {
     const entry = await api.getPassword(row.id);
-    await navigator.clipboard.writeText(entry.password);
+    await copyAndScheduleClear(entry.password);
     message.success("密码已复制到剪贴板");
   } catch (e: any) {
     message.error(`复制失败: ${e}`);
@@ -102,6 +129,7 @@ function resetForm() {
   form.totp_algo = "";
   form.totp_digits = 6;
   form.totp_period = 30;
+  otpauthUri.value = "";
 }
 
 function openAdd() {
@@ -168,8 +196,29 @@ async function openHistory(row: PasswordSummary) {
 }
 
 async function copyHistory(item: PasswordHistoryItem) {
-  await navigator.clipboard.writeText(item.pwd);
+  await copyAndScheduleClear(item.pwd);
   message.success("已复制历史密码");
+}
+
+// 粘贴 otpauth URI 自动填充
+const otpauthUri = ref("");
+async function importOtpauth() {
+  if (!otpauthUri.value.trim()) {
+    message.error("请粘贴 otpauth:// URI");
+    return;
+  }
+  try {
+    const p = await api.parseOtpauth(otpauthUri.value.trim());
+    form.totp_secret = p.secret;
+    form.totp_algo = p.algo;
+    form.totp_digits = p.digits;
+    form.totp_period = p.period;
+    if (!form.title) form.title = p.issuer || p.label || form.title;
+    otpauthUri.value = "";
+    message.success("已导入 TOTP 配置");
+  } catch (e: any) {
+    message.error(`解析失败: ${e}`);
+  }
 }
 
 const columns: DataTableColumns<PasswordSummary> = [
@@ -191,6 +240,15 @@ const columns: DataTableColumns<PasswordSummary> = [
             ),
         }
       );
+    },
+  },
+  {
+    title: "2FA",
+    key: "totp",
+    width: 120,
+    render(row) {
+      if (!row.has_totp) return "";
+      return h(TotpCell, { id: row.id });
     },
   },
   {
@@ -247,7 +305,7 @@ onMounted(loadData);
     </n-space>
     <n-data-table
       :columns="columns"
-      :data="data"
+      :data="filtered"
       :loading="loading"
       :bordered="false"
       :pagination="{ pageSize: 20 }"
@@ -291,6 +349,40 @@ onMounted(loadData);
         </n-form-item>
         <n-form-item label="备注">
           <n-input v-model:value="form.notes" type="textarea" :rows="3" />
+        </n-form-item>
+        <n-divider style="margin: 12px 0 8px">两步验证 (TOTP)</n-divider>
+        <n-form-item label="otpauth">
+          <n-input-group>
+            <n-input
+              v-model:value="otpauthUri"
+              placeholder="粘贴 otpauth://totp/... 一键导入"
+            />
+            <n-button @click="importOtpauth">导入</n-button>
+          </n-input-group>
+        </n-form-item>
+        <n-form-item label="密钥">
+          <n-input
+            v-model:value="form.totp_secret"
+            placeholder="Base32 字符串，留空表示不启用 2FA"
+          />
+        </n-form-item>
+        <n-form-item label="算法">
+          <n-select
+            v-model:value="form.totp_algo"
+            :options="[
+              { label: '默认 (SHA1)', value: '' },
+              { label: 'SHA1', value: 'SHA1' },
+              { label: 'SHA256', value: 'SHA256' },
+              { label: 'SHA512', value: 'SHA512' },
+              { label: 'SM3 (国密扩展，仅 zhmm 互通)', value: 'SM3' },
+            ]"
+          />
+        </n-form-item>
+        <n-form-item label="位数">
+          <n-input-number v-model:value="form.totp_digits" :min="6" :max="10" />
+        </n-form-item>
+        <n-form-item label="周期(秒)">
+          <n-input-number v-model:value="form.totp_period" :min="1" :max="300" />
         </n-form-item>
       </n-form>
       <template #footer>
