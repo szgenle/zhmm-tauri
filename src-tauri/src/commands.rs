@@ -168,3 +168,8 @@ pub fn update_settings(
 ) -> AppResult<AppSettings> {
     state.update(new_settings)
 }
+
+#[tauri::command]
+pub fn list_roles(state: State<'_, VaultState>) -> AppResult<Vec<String>> {
+    state.roles()
+}

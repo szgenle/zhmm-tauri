@@ -95,6 +95,13 @@ impl VaultState {
         Ok(data.entries.iter().map(Into::into).collect())
     }
 
+    /// 获取当前分类列表
+    pub fn roles(&self) -> AppResult<Vec<String>> {
+        let guard = self.data.read();
+        let data = guard.as_ref().ok_or(AppError::Locked)?;
+        Ok(data.roles.clone())
+    }
+
     /// 取完整条目
     pub fn get(&self, id: &str) -> AppResult<PasswordEntry> {
         let guard = self.data.read();

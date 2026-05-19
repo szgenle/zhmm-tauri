@@ -48,6 +48,7 @@ pub fn run() {
             commands::restore_from_file,
             commands::get_settings,
             commands::update_settings,
+            commands::list_roles,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref } from "vue";
-import { NButton, NIcon, NTag, NSpace } from "naive-ui";
+import { NButton, NIcon, NTag, NSpace, useMessage, useDialog } from "naive-ui";
 import {
   AddOutline,
   CopyOutline,
   CreateOutline,
+  DiceOutline,
+  OpenOutline,
   TimeOutline,
   TrashOutline,
 } from "@vicons/ionicons5";
@@ -17,6 +19,10 @@ import {
   type PasswordSummary,
 } from "../api";
 import TotpCell from "../components/TotpCell.vue";
+import PasswordStrengthBar from "../components/PasswordStrengthBar.vue";
+import RandomPasswordDialog from "../components/RandomPasswordDialog.vue";
+import TagSidebar from "../components/TagSidebar.vue";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { copyAndScheduleClear } from "../settings";
 
 const message = useMessage();
@@ -25,6 +31,7 @@ const dialog = useDialog();
 const searchQuery = ref("");
 const data = ref<PasswordSummary[]>([]);
 const loading = ref(false);
+const selectedTags = ref<string[]>([]);
 
 /**
  * 字符串规范化：去首尾空白 + NFKC + 转小写
@@ -35,9 +42,17 @@ function normalize(s: string): string {
 }
 
 const filtered = computed<PasswordSummary[]>(() => {
+  let result = data.value;
+  // 标签 AND 筛选
+  if (selectedTags.value.length > 0) {
+    result = result.filter((row) =>
+      selectedTags.value.every((t) => (row.tags || []).includes(t))
+    );
+  }
+  // 关键词搜索
   const q = normalize(searchQuery.value);
-  if (!q) return data.value;
-  return data.value.filter((row) => {
+  if (!q) return result;
+  return result.filter((row) => {
     const fields = [
       row.title,
       row.role,
@@ -76,10 +91,19 @@ const showHistoryDialog = ref(false);
 const historyTitle = ref("");
 const historyItems = ref<PasswordHistoryItem[]>([]);
 
+// 随机密码对话框
+const showRandomPwdDialog = ref(false);
+
+function onRandomPwdConfirm(pwd: string) {
+  form.password = pwd;
+  showRandomPwdDialog.value = false;
+}
+
 async function loadData() {
   loading.value = true;
   try {
     data.value = await api.listPasswords();
+    await loadRoles();
   } catch (e: any) {
     message.error(`加载失败: ${e}`);
   } finally {
@@ -94,6 +118,15 @@ async function handleCopy(row: PasswordSummary) {
     message.success("密码已复制到剪贴板");
   } catch (e: any) {
     message.error(`复制失败: ${e}`);
+  }
+}
+
+async function handleOpenUrl(row: PasswordSummary) {
+  if (!row.url) return;
+  try {
+    await openUrl(row.url);
+  } catch (e: any) {
+    message.error(`打开失败: ${e}`);
   }
 }
 
@@ -260,7 +293,7 @@ const columns: DataTableColumns<PasswordSummary> = [
   {
     title: "操作",
     key: "actions",
-    width: 240,
+    width: 280,
     render(row) {
       return h(NSpace, { size: 0 }, {
         default: () => [
@@ -268,6 +301,8 @@ const columns: DataTableColumns<PasswordSummary> = [
             { default: () => "复制", icon: () => h(NIcon, null, { default: () => h(CopyOutline) }) }),
           h(NButton, { size: "small", quaternary: true, onClick: () => openEdit(row) },
             { default: () => "编辑", icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) }),
+          ...(row.url ? [h(NButton, { size: "small", quaternary: true, onClick: () => handleOpenUrl(row) },
+            { default: () => "打开", icon: () => h(NIcon, null, { default: () => h(OpenOutline) }) })] : []),
           h(NButton, { size: "small", quaternary: true, onClick: () => openHistory(row) },
             { default: () => "历史", icon: () => h(NIcon, null, { default: () => h(TimeOutline) }) }),
           h(NButton, { size: "small", quaternary: true, type: "error", onClick: () => handleDelete(row) },
@@ -278,17 +313,28 @@ const columns: DataTableColumns<PasswordSummary> = [
   },
 ];
 
-const roleOptions = [
+const roleOptions = ref<{ label: string; value: string }[]>([
   { label: "个人", value: "个人" },
   { label: "工作", value: "工作" },
   { label: "其它", value: "其它" },
-];
+]);
+
+async function loadRoles() {
+  try {
+    const roles = await api.listRoles();
+    roleOptions.value = roles.map((r) => ({ label: r, value: r }));
+  } catch {
+    // 失败时保留默认
+  }
+}
 
 onMounted(loadData);
 </script>
 
 <template>
-  <div>
+  <div class="pwd-page">
+    <TagSidebar :entries="data" :selected-tags="selectedTags" @update:selected-tags="v => selectedTags = v" />
+    <div class="pwd-main">
     <n-space justify="space-between" style="margin-bottom: 16px">
       <n-input
         v-model:value="searchQuery"
@@ -323,17 +369,30 @@ onMounted(loadData);
           <n-input v-model:value="form.title" placeholder="例如：GitHub" />
         </n-form-item>
         <n-form-item label="分类">
-          <n-select v-model:value="form.role" :options="roleOptions" />
+          <n-select
+            v-model:value="form.role"
+            :options="roleOptions"
+            filterable
+            tag
+            placeholder="选择或输入新类别"
+          />
         </n-form-item>
         <n-form-item label="用户名">
           <n-input v-model:value="form.username" />
         </n-form-item>
         <n-form-item label="密码">
-          <n-input
-            v-model:value="form.password"
-            type="password"
-            show-password-on="click"
-          />
+          <n-input-group>
+            <n-input
+              v-model:value="form.password"
+              type="password"
+              show-password-on="click"
+              style="flex: 1"
+            />
+            <n-button @click="showRandomPwdDialog = true" title="生成随机密码">
+              <template #icon><n-icon><DiceOutline /></n-icon></template>
+            </n-button>
+          </n-input-group>
+          <PasswordStrengthBar :password="form.password" />
         </n-form-item>
         <n-form-item label="手机">
           <n-input v-model:value="form.phone" />
@@ -421,5 +480,28 @@ onMounted(loadData);
         </n-list-item>
       </n-list>
     </n-modal>
+
+    <!-- 随机密码生成器 -->
+    <n-modal
+      v-model:show="showRandomPwdDialog"
+      preset="card"
+      title="生成随机密码"
+      style="width: 480px"
+    >
+      <RandomPasswordDialog @confirm="onRandomPwdConfirm" />
+    </n-modal>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.pwd-page {
+  display: flex;
+  height: 100%;
+}
+.pwd-main {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+}
+</style>

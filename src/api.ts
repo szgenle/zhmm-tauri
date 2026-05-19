@@ -117,6 +117,9 @@ export const api = {
   updateSettings(newSettings: AppSettings): Promise<AppSettings> {
     return invoke("update_settings", { newSettings });
   },
+  listRoles(): Promise<string[]> {
+    return invoke("list_roles");
+  },
 };
 
 export interface TotpCode {
