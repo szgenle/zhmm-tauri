@@ -157,6 +157,13 @@ export const api = {
   suggestSite(urlOrHost: string): Promise<SiteSuggestion> {
     return invoke("suggest_site", { urlOrHost });
   },
+  // 主密码管理
+  verifyMasterPassword(password: string): Promise<boolean> {
+    return invoke("verify_master_password", { password });
+  },
+  rekeyVault(oldPassword: string, newPassword: string): Promise<string> {
+    return invoke("rekey_vault", { oldPassword, newPassword });
+  },
 };
 
 export interface TotpCode {

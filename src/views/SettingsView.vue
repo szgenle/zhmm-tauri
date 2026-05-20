@@ -6,6 +6,7 @@ import { settings, saveSettings } from "../settings";
 import BackupListDialog from "../components/BackupListDialog.vue";
 import TagManagementDialog from "../components/TagManagementDialog.vue";
 import SiteCatalogDialog from "../components/SiteCatalogDialog.vue";
+import RekeyDialog from "../components/RekeyDialog.vue";
 
 const message = useMessage();
 const dialog = useDialog();
@@ -54,6 +55,7 @@ const backupMode = ref<"backup" | "restore">("backup");
 const showBackupListDialog = ref(false);
 const showTagManagement = ref(false);
 const showSiteCatalog = ref(false);
+const showRekey = ref(false);
 const backupPath = ref("");
 const backupPassword = ref("");
 
@@ -175,6 +177,13 @@ async function confirmBackup() {
         </n-form-item>
       </n-form>
       <n-button type="primary" size="small" @click="applySettings">保存设置</n-button>
+      <n-divider />
+      <n-space>
+        <n-button type="warning" :disabled="busy" @click="showRekey = true">更换主密码</n-button>
+      </n-space>
+      <n-text depth="3" style="font-size: 12px">
+        更换前会自动在 <n-text code>.backups/</n-text> 生成「<n-text code>rekey_</n-text>」前缀的保险备份。
+      </n-text>
     </n-card>
     <n-card title="外观" style="margin-bottom: 16px">
       <n-form label-placement="left" label-width="160">
@@ -252,5 +261,6 @@ async function confirmBackup() {
     <BackupListDialog v-model:show="showBackupListDialog" />
     <TagManagementDialog v-model:show="showTagManagement" @changed="() => {}" />
     <SiteCatalogDialog v-model:show="showSiteCatalog" />
+    <RekeyDialog v-model:show="showRekey" />
   </div>
 </template>

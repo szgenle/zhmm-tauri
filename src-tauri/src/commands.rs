@@ -248,3 +248,22 @@ pub fn list_site_catalog() -> Vec<site_catalog::SiteCatalogEntry> {
 pub fn suggest_site(url_or_host: String) -> site_catalog::SiteSuggestion {
     site_catalog::suggest(&url_or_host)
 }
+
+// ========== 主密码管理 ==========
+
+#[tauri::command]
+pub fn verify_master_password(
+    password: String,
+    state: State<'_, VaultState>,
+) -> AppResult<bool> {
+    state.verify_master_password(&password)
+}
+
+#[tauri::command]
+pub fn rekey_vault(
+    old_password: String,
+    new_password: String,
+    state: State<'_, VaultState>,
+) -> AppResult<String> {
+    state.rekey(&old_password, &new_password)
+}

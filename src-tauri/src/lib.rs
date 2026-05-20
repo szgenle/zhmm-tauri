@@ -61,6 +61,8 @@ pub fn run() {
             commands::rollback_password,
             commands::list_site_catalog,
             commands::suggest_site,
+            commands::verify_master_password,
+            commands::rekey_vault,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

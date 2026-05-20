@@ -497,6 +497,74 @@ impl VaultState {
         Ok(removed)
     }
 
+    // ========== 主密码管理 ==========
+
+    /// 校验主密码：尝试用给定密码解密当前密码库文件，成功即正确
+    pub fn verify_master_password(&self, password: &str) -> AppResult<bool> {
+        let bytes = fs::read(&*self.path.read())?;
+        let env = Envelope::from_bytes(&bytes)?;
+        match decrypt(&env, password.as_bytes()) {
+            Ok(_) => Ok(true),
+            Err(AppError::Crypto(_)) | Err(AppError::IntegrityCheck) | Err(AppError::InvalidPassword) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// 更换主密码：先用旧密码校验 → 创建保险备份 → 用新密码重新加密落盘
+    /// 返回保险备份的文件名（位于 `.backups/` 目录下）
+    pub fn rekey(&self, old_password: &str, new_password: &str) -> AppResult<String> {
+        if new_password.is_empty() {
+            return Err(AppError::Invalid("新主密码不能为空".into()));
+        }
+        if new_password == old_password {
+            return Err(AppError::Invalid("新主密码不能与旧主密码相同".into()));
+        }
+        // 必须已解锁（缓存的 master 用于一致性比对）
+        let cached = self.master.read().clone().ok_or(AppError::Locked)?;
+        if cached.as_slice() != old_password.as_bytes() {
+            return Err(AppError::InvalidPassword);
+        }
+
+        // 1) 创建保险备份（文件名前缀 rekey_，使用旧密码加密的当前数据）
+        let backup_name = self.create_rekey_backup()?;
+
+        // 2) 用新密码重新加密当前明文数据并原子落盘
+        let bytes = {
+            let guard = self.data.read();
+            let data = guard.as_ref().ok_or(AppError::Locked)?;
+            serde_json::to_vec(data)?
+        };
+        let new_env = encrypt(&bytes, new_password.as_bytes())?;
+        self.write_envelope(&new_env)?;
+
+        // 3) 更新缓存的主密码（旧密码 zeroize）
+        {
+            let mut master_guard = self.master.write();
+            if let Some(mut old) = master_guard.take() {
+                old.zeroize();
+            }
+            *master_guard = Some(new_password.as_bytes().to_vec());
+        }
+        Ok(backup_name)
+    }
+
+    /// 创建 rekey 保险备份：使用当前缓存的（旧）主密码加密当前数据
+    fn create_rekey_backup(&self) -> AppResult<String> {
+        let master = self.master.read().clone().ok_or(AppError::Locked)?;
+        let data = self.snapshot()?;
+        let bytes = serde_json::to_vec(&data)?;
+        let env = encrypt(&bytes, &master)?;
+
+        let dir = self.backup_dir();
+        fs::create_dir_all(&dir)?;
+
+        let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let name = format!("rekey_{ts}.{BACKUP_EXT}");
+        let path = dir.join(&name);
+        fs::write(&path, env.to_bytes())?;
+        Ok(name)
+    }
+
     // ========== 内部方法 ==========
 
     fn write_envelope(&self, env: &Envelope) -> AppResult<()> {
