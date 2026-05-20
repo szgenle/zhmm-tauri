@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, onMounted, reactive, ref } from "vue";
+import { computed, h, nextTick, onMounted, reactive, ref } from "vue";
 import { NButton, NIcon, NTag, NSpace, useMessage, useDialog } from "naive-ui";
 import {
   AddOutline,
@@ -22,7 +22,9 @@ import {
 import TotpCell from "../components/TotpCell.vue";
 import PasswordStrengthBar from "../components/PasswordStrengthBar.vue";
 import RandomPasswordDialog from "../components/RandomPasswordDialog.vue";
+import AddRoleDialog from "../components/AddRoleDialog.vue";
 import TagSidebar from "../components/TagSidebar.vue";
+import WelcomeWidget from "../components/WelcomeWidget.vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { copyAndScheduleClear } from "../settings";
 
@@ -131,6 +133,69 @@ const showRandomPwdDialog = ref(false);
 function onRandomPwdConfirm(pwd: string) {
   form.password = pwd;
   showRandomPwdDialog.value = false;
+}
+
+// 新建类别对话框
+const showAddRoleDialog = ref(false);
+
+function onAddRoleSuccess(role: string) {
+  // 加入 select 选项并立即选中
+  if (!roleOptions.value.find((o) => o.value === role)) {
+    roleOptions.value = [...roleOptions.value, { label: role, value: role }];
+  }
+  form.role = role;
+  message.success(`已新建类别「${role}」`);
+}
+
+// 右键菜单
+const showContextMenu = ref(false);
+const contextMenuX = ref(0);
+const contextMenuY = ref(0);
+const contextRow = ref<PasswordSummary | null>(null);
+
+const contextMenuOptions = computed(() => {
+  const row = contextRow.value;
+  if (!row) return [] as Array<{ label: string; key: string; disabled?: boolean }>;
+  const opts: Array<{ label: string; key: string; disabled?: boolean }> = [
+    { label: "复制密码", key: "copy" },
+    { label: revealedPasswords.value.has(row.id) ? "隐藏密码" : "显示密码", key: "reveal" },
+    { label: "编辑", key: "edit" },
+  ];
+  if (row.url) opts.push({ label: "打开网址", key: "open" });
+  opts.push({ label: "历史密码", key: "history" });
+  opts.push({ label: "删除", key: "delete" });
+  return opts;
+});
+
+function onRowContextMenu(e: MouseEvent, row: PasswordSummary) {
+  e.preventDefault();
+  contextRow.value = row;
+  showContextMenu.value = false;
+  nextTick(() => {
+    contextMenuX.value = e.clientX;
+    contextMenuY.value = e.clientY;
+    showContextMenu.value = true;
+  });
+}
+
+function handleContextSelect(key: string) {
+  showContextMenu.value = false;
+  const row = contextRow.value;
+  if (!row) return;
+  switch (key) {
+    case "copy": handleCopy(row); break;
+    case "reveal": revealPassword(row); break;
+    case "edit": openEdit(row); break;
+    case "open": handleOpenUrl(row); break;
+    case "history": openHistory(row); break;
+    case "delete": handleDelete(row); break;
+  }
+}
+
+function rowProps(row: PasswordSummary) {
+  return {
+    onContextmenu: (e: MouseEvent) => onRowContextMenu(e, row),
+  };
 }
 
 async function loadData() {
@@ -430,12 +495,31 @@ onMounted(loadData);
         添加密码
       </n-button>
     </n-space>
+    <!-- 空库欢迎页：未加载中、无数据、无筛选、无搜索 -->
+    <WelcomeWidget
+      v-if="!loading && data.length === 0 && !searchQuery.trim() && selectedTags.length === 0"
+      @add="openAdd"
+    />
     <n-data-table
+      v-else
       :columns="columns"
       :data="filtered"
       :loading="loading"
       :bordered="false"
       :pagination="{ pageSize: 20 }"
+      :row-props="rowProps"
+    />
+
+    <!-- 右键上下文菜单 -->
+    <n-dropdown
+      placement="bottom-start"
+      trigger="manual"
+      :show="showContextMenu"
+      :options="contextMenuOptions"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      @clickoutside="showContextMenu = false"
+      @select="handleContextSelect"
     />
 
     <!-- 新增/编辑对话框 -->
@@ -450,13 +534,18 @@ onMounted(loadData);
           <n-input v-model:value="form.title" placeholder="例如：GitHub" />
         </n-form-item>
         <n-form-item label="分类">
-          <n-select
-            v-model:value="form.role"
-            :options="roleOptions"
-            filterable
-            tag
-            placeholder="选择或输入新类别"
-          />
+          <n-input-group>
+            <n-select
+              v-model:value="form.role"
+              :options="roleOptions"
+              filterable
+              placeholder="选择类别"
+              style="flex: 1"
+            />
+            <n-button @click="showAddRoleDialog = true" title="新建类别">
+              + 新建
+            </n-button>
+          </n-input-group>
         </n-form-item>
         <n-form-item label="用户名">
           <n-input v-model:value="form.username" />
@@ -582,6 +671,13 @@ onMounted(loadData);
     >
       <RandomPasswordDialog @confirm="onRandomPwdConfirm" />
     </n-modal>
+
+    <!-- 新建类别对话框 -->
+    <AddRoleDialog
+      v-model:show="showAddRoleDialog"
+      :existing-roles="roleOptions.map(o => o.value)"
+      @success="onAddRoleSuccess"
+    />
     </div>
   </div>
 </template>

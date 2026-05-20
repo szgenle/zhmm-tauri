@@ -267,3 +267,32 @@ pub fn rekey_vault(
 ) -> AppResult<String> {
     state.rekey(&old_password, &new_password)
 }
+
+// ========== 防截屏 ==========
+
+/// 对主窗口应用 / 撤销防截屏保护
+#[tauri::command]
+pub fn apply_anti_capture(window: tauri::WebviewWindow, enabled: bool) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(ns) = window.ns_window() {
+            return crate::anti_capture::apply_macos(ns as *mut _, enabled);
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(hwnd) = window.hwnd() {
+            return crate::anti_capture::apply_windows(hwnd.0 as *mut _, enabled);
+        }
+    }
+    let _ = (window, enabled);
+    false
+}
+
+// ========== xlsx 模板 ==========
+
+/// 导出空模板供用户填写后导入
+#[tauri::command]
+pub fn export_xlsx_template(path: String) -> AppResult<()> {
+    io_xlsx::export_template(&PathBuf::from(path))
+}

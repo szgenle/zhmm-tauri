@@ -21,6 +21,9 @@ pub struct AppSettings {
     /// 复制密码后剪贴板清空秒数；0 = 不清空
     #[serde(default = "default_clipboard_clear")]
     pub clipboard_clear_seconds: u32,
+    /// 是否启用防截屏保护（macOS/Windows）
+    #[serde(default = "default_anti_screenshot")]
+    pub anti_screenshot: bool,
 }
 
 fn default_theme() -> String {
@@ -32,6 +35,9 @@ fn default_auto_lock() -> u32 {
 fn default_clipboard_clear() -> u32 {
     30
 }
+fn default_anti_screenshot() -> bool {
+    true
+}
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -39,6 +45,7 @@ impl Default for AppSettings {
             theme: default_theme(),
             auto_lock_minutes: default_auto_lock(),
             clipboard_clear_seconds: default_clipboard_clear(),
+            anti_screenshot: default_anti_screenshot(),
         }
     }
 }

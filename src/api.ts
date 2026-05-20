@@ -164,6 +164,14 @@ export const api = {
   rekeyVault(oldPassword: string, newPassword: string): Promise<string> {
     return invoke("rekey_vault", { oldPassword, newPassword });
   },
+  // 防截屏
+  applyAntiCapture(enabled: boolean): Promise<boolean> {
+    return invoke("apply_anti_capture", { enabled });
+  },
+  // xlsx 模板
+  exportXlsxTemplate(path: string): Promise<void> {
+    return invoke("export_xlsx_template", { path });
+  },
 };
 
 export interface TotpCode {
@@ -184,6 +192,7 @@ export interface AppSettings {
   theme: string; // "auto" | "light" | "dark"
   auto_lock_minutes: number; // 0 = 不自动锁定
   clipboard_clear_seconds: number; // 0 = 不清空
+  anti_screenshot?: boolean;
 }
 
 export interface BackupInfo {

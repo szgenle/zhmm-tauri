@@ -8,6 +8,7 @@ mod settings;
 mod site_catalog;
 mod totp;
 mod vault;
+mod anti_capture;
 
 use tauri::Manager;
 use settings::SettingsState;
@@ -63,6 +64,8 @@ pub fn run() {
             commands::suggest_site,
             commands::verify_master_password,
             commands::rekey_vault,
+            commands::apply_anti_capture,
+            commands::export_xlsx_template,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

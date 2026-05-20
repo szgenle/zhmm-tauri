@@ -37,6 +37,14 @@ async function onThemeChange(value: string) {
   }
 }
 
+async function onAntiScreenshotChange(value: boolean) {
+  try {
+    await saveSettings({ anti_screenshot: value });
+  } catch (e: any) {
+    message.error(`防截屏设置保存失败: ${e}`);
+  }
+}
+
 async function applySettings() {
   try {
     await saveSettings({
@@ -90,6 +98,24 @@ async function handleImportXlsx() {
     message.success(`已导入 ${count} 条`);
   } catch (e: any) {
     message.error(`导入失败: ${e}`);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function handleDownloadTemplate() {
+  const path = await saveDialog({
+    title: "保存 xlsx 模板",
+    defaultPath: "zhmm-template.xlsx",
+    filters: [{ name: "Excel", extensions: ["xlsx"] }],
+  });
+  if (!path) return;
+  busy.value = true;
+  try {
+    await api.exportXlsxTemplate(path as string);
+    message.success(`模板已保存到 ${path}`);
+  } catch (e: any) {
+    message.error(`模板生成失败: ${e}`);
   } finally {
     busy.value = false;
   }
@@ -175,6 +201,12 @@ async function confirmBackup() {
           />
           <n-text depth="3" style="margin-left: 12px; font-size: 12px">0 = 不清空</n-text>
         </n-form-item>
+        <n-form-item label="防截屏保护">
+          <n-switch :value="settings.anti_screenshot" @update:value="onAntiScreenshotChange" />
+          <n-text depth="3" style="margin-left: 12px; font-size: 12px">
+            开启后屏幕录制 / 截图将看不到本窗口内容（macOS / Windows）
+          </n-text>
+        </n-form-item>
       </n-form>
       <n-button type="primary" size="small" @click="applySettings">保存设置</n-button>
       <n-divider />
@@ -202,6 +234,7 @@ async function confirmBackup() {
         <n-space>
           <n-button :disabled="busy" @click="handleExportXlsx">导出 xlsx</n-button>
           <n-button :disabled="busy" @click="handleImportXlsx">导入 xlsx</n-button>
+          <n-button :disabled="busy" @click="handleDownloadTemplate">下载模板</n-button>
         </n-space>
         <n-text depth="3" style="font-size: 12px">
           xlsx 用于跨工具迁移；故意不导出 TOTP 密钥与密码历史，避免敏感信息扩散。

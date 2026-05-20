@@ -45,6 +45,17 @@ fn unescape(s: &str) -> String {
     s.replace("[r]", "\r").replace("[n]", "\n")
 }
 
+/// 导出一份空模板（仅表头行）供用户填写后导入
+pub fn export_template(path: &Path) -> AppResult<()> {
+    let mut wb = Workbook::new();
+    let ws = wb.add_worksheet().set_name("密码数据").map_err(xlsx_err)?;
+    for (col, h) in CN_HEADS.iter().enumerate() {
+        ws.write_string(0, col as u16, *h).map_err(xlsx_err)?;
+    }
+    wb.save(path).map_err(xlsx_err)?;
+    Ok(())
+}
+
 /// 把条目导出为 xlsx
 pub fn export_xlsx(path: &Path, entries: &[PasswordEntry]) -> AppResult<()> {
     let mut wb = Workbook::new();

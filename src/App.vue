@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { darkTheme, lightTheme, zhCN, dateZhCN } from "naive-ui";
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { settings, loadSettings } from "./settings";
+import { api } from "./api";
 
 const sysIsDark = ref(false);
 
@@ -21,7 +22,25 @@ onMounted(async () => {
   sysIsDark.value = mql.matches;
   mql.addEventListener("change", handleChange);
   await loadSettings();
+  // 启动后按设置应用防截屏
+  try {
+    await api.applyAntiCapture(settings.anti_screenshot ?? true);
+  } catch {
+    // 平台不支持时忽略
+  }
 });
+
+// 设置切换时实时应用
+watch(
+  () => settings.anti_screenshot,
+  async (v) => {
+    try {
+      await api.applyAntiCapture(v ?? true);
+    } catch {
+      // 忽略
+    }
+  }
+);
 
 onUnmounted(() => {
   mql.removeEventListener("change", handleChange);

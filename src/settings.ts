@@ -9,6 +9,7 @@ export const settings = reactive<AppSettings>({
   theme: "auto",
   auto_lock_minutes: 5,
   clipboard_clear_seconds: 30,
+  anti_screenshot: true,
 });
 
 let loaded = false;
@@ -19,6 +20,7 @@ export async function loadSettings(): Promise<void> {
     settings.theme = s.theme;
     settings.auto_lock_minutes = s.auto_lock_minutes;
     settings.clipboard_clear_seconds = s.clipboard_clear_seconds;
+    settings.anti_screenshot = s.anti_screenshot ?? true;
     loaded = true;
   } catch {
     // 后端未就绪时静默 fallback 到默认
