@@ -11,7 +11,9 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AddRoleDialog: typeof import('./components/AddRoleDialog.vue')['default']
     BackupListDialog: typeof import('./components/BackupListDialog.vue')['default']
+    NAlert: typeof import('naive-ui')['NAlert']
     NButton: typeof import('naive-ui')['NButton']
     NCard: typeof import('naive-ui')['NCard']
     NCheckbox: typeof import('naive-ui')['NCheckbox']
@@ -21,6 +23,7 @@ declare module 'vue' {
     NDescriptionsItem: typeof import('naive-ui')['NDescriptionsItem']
     NDialogProvider: typeof import('naive-ui')['NDialogProvider']
     NDivider: typeof import('naive-ui')['NDivider']
+    NDropdown: typeof import('naive-ui')['NDropdown']
     NDynamicTags: typeof import('naive-ui')['NDynamicTags']
     NEmpty: typeof import('naive-ui')['NEmpty']
     NForm: typeof import('naive-ui')['NForm']
@@ -48,12 +51,17 @@ declare module 'vue' {
     NSpace: typeof import('naive-ui')['NSpace']
     NSpin: typeof import('naive-ui')['NSpin']
     NSwitch: typeof import('naive-ui')['NSwitch']
+    NTag: typeof import('naive-ui')['NTag']
     NText: typeof import('naive-ui')['NText']
     PasswordStrengthBar: typeof import('./components/PasswordStrengthBar.vue')['default']
     RandomPasswordDialog: typeof import('./components/RandomPasswordDialog.vue')['default']
+    RekeyDialog: typeof import('./components/RekeyDialog.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SiteCatalogDialog: typeof import('./components/SiteCatalogDialog.vue')['default']
+    TagManagementDialog: typeof import('./components/TagManagementDialog.vue')['default']
     TagSidebar: typeof import('./components/TagSidebar.vue')['default']
     TotpCell: typeof import('./components/TotpCell.vue')['default']
+    WelcomeWidget: typeof import('./components/WelcomeWidget.vue')['default']
   }
 }

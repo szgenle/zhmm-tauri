@@ -26,6 +26,7 @@ import AddRoleDialog from "../components/AddRoleDialog.vue";
 import TagSidebar from "../components/TagSidebar.vue";
 import WelcomeWidget from "../components/WelcomeWidget.vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { copyAndScheduleClear } from "../settings";
 
 const message = useMessage();
@@ -155,16 +156,24 @@ const contextRow = ref<PasswordSummary | null>(null);
 
 const contextMenuOptions = computed(() => {
   const row = contextRow.value;
-  if (!row) return [] as Array<{ label: string; key: string; disabled?: boolean }>;
-  const opts: Array<{ label: string; key: string; disabled?: boolean }> = [
-    { label: "复制密码", key: "copy" },
-    { label: revealedPasswords.value.has(row.id) ? "隐藏密码" : "显示密码", key: "reveal" },
-    { label: "编辑", key: "edit" },
-  ];
+  if (!row) return [] as Array<{ label: string; key: string; disabled?: boolean; type?: string }>;
+  const opts: Array<{ label?: string; key: string; disabled?: boolean; type?: string }> = [];
+  // 复制账号（非敏感，不自动清空）
+  opts.push({ label: "复制账号", key: "copy-user", disabled: !row.username });
+  // 复制密码（敏感，自动清空）
+  opts.push({ label: "复制密码", key: "copy" });
+  // 复制动态码（仅当配置了 TOTP）
+  if (row.has_totp) opts.push({ label: "复制动态码", key: "copy-totp" });
+  // 复制网址（非敏感）
+  if (row.url) opts.push({ label: "复制网址", key: "copy-url" });
   if (row.url) opts.push({ label: "打开网址", key: "open" });
+  opts.push({ key: "d1", type: "divider" });
+  opts.push({ label: revealedPasswords.value.has(row.id) ? "隐藏密码" : "显示密码", key: "reveal" });
+  opts.push({ label: "编辑", key: "edit" });
   opts.push({ label: "历史密码", key: "history" });
+  opts.push({ key: "d2", type: "divider" });
   opts.push({ label: "删除", key: "delete" });
-  return opts;
+  return opts as Array<{ label: string; key: string; disabled?: boolean; type?: string }>;
 });
 
 function onRowContextMenu(e: MouseEvent, row: PasswordSummary) {
@@ -183,12 +192,46 @@ function handleContextSelect(key: string) {
   const row = contextRow.value;
   if (!row) return;
   switch (key) {
+    case "copy-user": handleCopyUsername(row); break;
     case "copy": handleCopy(row); break;
+    case "copy-totp": handleCopyTotp(row); break;
+    case "copy-url": handleCopyUrl(row); break;
     case "reveal": revealPassword(row); break;
     case "edit": openEdit(row); break;
     case "open": handleOpenUrl(row); break;
     case "history": openHistory(row); break;
     case "delete": handleDelete(row); break;
+  }
+}
+
+async function handleCopyUsername(row: PasswordSummary) {
+  if (!row.username) return;
+  try {
+    await writeText(row.username);
+    message.success("账号已复制到剪贴板");
+  } catch (e: any) {
+    message.error(`复制失败: ${e}`);
+  }
+}
+
+async function handleCopyUrl(row: PasswordSummary) {
+  if (!row.url) return;
+  try {
+    await writeText(row.url);
+    message.success("网址已复制到剪贴板");
+  } catch (e: any) {
+    message.error(`复制失败: ${e}`);
+  }
+}
+
+async function handleCopyTotp(row: PasswordSummary) {
+  if (!row.has_totp) return;
+  try {
+    const code = await api.generateTotp(row.id);
+    await copyAndScheduleClear(code.code);
+    message.success(`动态码已复制（剩余 ${code.remaining_seconds}s）`);
+  } catch (e: any) {
+    message.error(`复制失败: ${e}`);
   }
 }
 
