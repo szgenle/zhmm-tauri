@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, nextTick, onMounted, reactive, ref } from "vue";
+import { computed, h, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { NButton, NIcon, NTag, NSpace, useMessage, useDialog } from "naive-ui";
 import {
   AddOutline,
@@ -305,6 +305,7 @@ function resetForm() {
   form.totp_digits = 6;
   form.totp_period = 30;
   otpauthUri.value = "";
+  totpEnabled.value = false;
 }
 
 function openAdd() {
@@ -329,6 +330,7 @@ async function openEdit(row: PasswordSummary) {
     form.totp_algo = e.totp_algo;
     form.totp_digits = e.totp_digits || 6;
     form.totp_period = e.totp_period || 30;
+    totpEnabled.value = !!e.totp_secret;
     editingId.value = e.id;
     showEditDialog.value = true;
   } catch (e: any) {
@@ -406,6 +408,18 @@ function rollbackHistory(idx: number) {
   });
 }
 
+// TOTP 区域展开控制
+const totpEnabled = ref(false);
+watch(totpEnabled, (v) => {
+  if (!v) {
+    form.totp_secret = "";
+    form.totp_algo = "";
+    form.totp_digits = 6;
+    form.totp_period = 30;
+    otpauthUri.value = "";
+  }
+});
+
 // 粘贴 otpauth URI 自动填充
 const otpauthUri = ref("");
 async function importOtpauth() {
@@ -419,6 +433,7 @@ async function importOtpauth() {
     form.totp_algo = p.algo;
     form.totp_digits = p.digits;
     form.totp_period = p.period;
+    totpEnabled.value = true;
     if (!form.title) form.title = p.issuer || p.label || form.title;
     otpauthUri.value = "";
     message.success("已导入 TOTP 配置");
@@ -622,7 +637,10 @@ onMounted(loadData);
         <n-form-item label="备注">
           <n-input v-model:value="form.notes" type="textarea" :rows="3" />
         </n-form-item>
-        <n-divider style="margin: 12px 0 8px">两步验证 (TOTP)</n-divider>
+        <n-divider style="margin: 12px 0 8px">
+          <n-checkbox v-model:checked="totpEnabled">两步验证 (TOTP)</n-checkbox>
+        </n-divider>
+        <template v-if="totpEnabled">
         <n-form-item label="otpauth">
           <n-input-group>
             <n-input
@@ -656,6 +674,7 @@ onMounted(loadData);
         <n-form-item label="周期(秒)">
           <n-input-number v-model:value="form.totp_period" :min="1" :max="300" />
         </n-form-item>
+        </template>
       </n-form>
       <template #footer>
         <n-space justify="end">
