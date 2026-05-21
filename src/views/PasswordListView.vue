@@ -609,18 +609,20 @@ onMounted(loadData);
           <n-input v-model:value="form.username" />
         </n-form-item>
         <n-form-item label="密码">
-          <n-input-group>
-            <n-input
-              v-model:value="form.password"
-              type="password"
-              show-password-on="click"
-              style="flex: 1"
-            />
-            <n-button @click="showRandomPwdDialog = true" title="生成随机密码">
-              <template #icon><n-icon><DiceOutline /></n-icon></template>
-            </n-button>
-          </n-input-group>
-          <PasswordStrengthBar :password="form.password" />
+          <div style="width: 100%">
+            <n-input-group>
+              <n-input
+                v-model:value="form.password"
+                type="password"
+                show-password-on="click"
+                style="flex: 1"
+              />
+              <n-button @click="showRandomPwdDialog = true" title="生成随机密码">
+                <template #icon><n-icon><DiceOutline /></n-icon></template>
+              </n-button>
+            </n-input-group>
+            <PasswordStrengthBar :password="form.password" />
+          </div>
         </n-form-item>
         <n-form-item label="手机">
           <n-input v-model:value="form.phone" />

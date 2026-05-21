@@ -40,7 +40,7 @@ const barColor = computed(() => colorMap[result.value.level]);
 
 <style scoped>
 .strength-bar {
-  margin-top: 4px;
+  margin-top: 8px;
 }
 .strength-row {
   display: flex;
