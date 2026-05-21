@@ -92,6 +92,8 @@ const collapsed = ref(false);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
+  height: 100%;
   transition: width 0.2s, min-width 0.2s;
 }
 .tag-sidebar.collapsed {

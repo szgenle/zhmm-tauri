@@ -401,12 +401,15 @@ onMounted(loadData);
 <style scoped>
 .pwd-page {
   display: flex;
-  height: 100%;
+  /* header 48px + content padding 16px*2 = 80px */
+  height: calc(100vh - 80px);
+  overflow: hidden;
 }
 .pwd-main {
   flex: 1;
-  overflow: auto;
+  overflow-y: auto;
   padding: 0;
+  min-height: 0;
 }
 /* 用户名单击复制 */
 .username-copy {
