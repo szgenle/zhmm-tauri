@@ -49,6 +49,8 @@ declare module 'vue' {
     NSpace: typeof import('naive-ui')['NSpace']
     NSpin: typeof import('naive-ui')['NSpin']
     NSwitch: typeof import('naive-ui')['NSwitch']
+    NTab: typeof import('naive-ui')['NTab']
+    NTabs: typeof import('naive-ui')['NTabs']
     NTag: typeof import('naive-ui')['NTag']
     NText: typeof import('naive-ui')['NText']
     PasswordStrengthBar: typeof import('./components/PasswordStrengthBar.vue')['default']

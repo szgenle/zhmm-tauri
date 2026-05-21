@@ -58,7 +58,7 @@ async function handleSubmit() {
     <n-card class="login-card" :bordered="false">
       <div class="logo">
         <n-icon size="48" :depth="3"><ShieldCheckmarkOutline /></n-icon>
-        <h1>智慧密码</h1>
+        <h1>账号小本本</h1>
         <p class="subtitle">
           {{ isCreating ? "创建你的本地密码库" : "输入主密码解锁密码库" }}
         </p>

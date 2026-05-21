@@ -9,7 +9,7 @@ const emit = defineEmits<{
 <template>
   <div class="welcome">
     <n-icon size="64" :depth="3"><ShieldCheckmarkOutline /></n-icon>
-    <h1 class="title">欢迎使用智慧密码</h1>
+    <h1 class="title">欢迎使用账号小本本</h1>
     <n-divider style="width: 320px" />
     <p class="info">
       这是一个安全的本地密码管理工具，可以帮助您管理各种账号密码。<br />
