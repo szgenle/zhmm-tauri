@@ -290,6 +290,38 @@ function handleDelete(row: PasswordSummary) {
   });
 }
 
+// 网址自动建议标签（防抖）
+let urlSuggestTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => form.url,
+  (newUrl) => {
+    if (urlSuggestTimer) clearTimeout(urlSuggestTimer);
+    const trimmed = (newUrl || "").trim();
+    if (!trimmed) return;
+    urlSuggestTimer = setTimeout(async () => {
+      try {
+        const suggestion = await api.suggestSite(trimmed);
+        if (suggestion.matched && suggestion.tags.length > 0) {
+          // 自动补充不重复的标签
+          const existing = new Set(form.tags);
+          for (const t of suggestion.tags) {
+            if (!existing.has(t)) {
+              form.tags.push(t);
+              existing.add(t);
+            }
+          }
+          // 如果名称为空且有建议名称，自动填入
+          if (!form.title.trim() && suggestion.name) {
+            form.title = suggestion.name;
+          }
+        }
+      } catch {
+        // 静默忽略建议失败
+      }
+    }, 600);
+  }
+);
+
 function resetForm() {
   form.title = "";
   form.role = "个人";
