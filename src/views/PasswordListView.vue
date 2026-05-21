@@ -459,7 +459,29 @@ const columns: DataTableColumns<PasswordSummary> = [
     },
   },
   { title: "分类", key: "role", width: 80 },
-  { title: "用户名", key: "username", width: 160 },
+  {
+    title: "用户名",
+    key: "username",
+    width: 160,
+    render(row) {
+      if (!row.username) return "";
+      return h(
+        'span',
+        {
+          class: 'username-copy',
+          title: '点击复制用户名',
+          onClick: (e: MouseEvent) => {
+            e.stopPropagation();
+            handleCopyUsername(row);
+          },
+        },
+        [
+          h('span', { class: 'username-text' }, row.username),
+          h(NIcon, { size: 14, class: 'username-copy-icon' }, { default: () => h(CopyOutline) }),
+        ]
+      );
+    },
+  },
   {
     title: "标签",
     key: "tags",
@@ -755,5 +777,34 @@ onMounted(loadData);
   flex: 1;
   overflow: auto;
   padding: 0;
+}
+/* 用户名单击复制 */
+.username-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border-radius: 4px;
+  transition: background-color 0.15s;
+  max-width: 100%;
+}
+.username-copy:hover {
+  background-color: var(--n-action-color, rgba(0, 0, 0, 0.05));
+}
+.username-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.username-copy-icon {
+  opacity: 0;
+  flex-shrink: 0;
+  color: var(--n-text-color-3, #999);
+  transition: opacity 0.15s;
+}
+.username-copy:hover .username-copy-icon {
+  opacity: 1;
 }
 </style>
