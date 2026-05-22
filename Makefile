@@ -1,4 +1,9 @@
-.PHONY: help install dev dev-fe build build-debug clean clean-fe clean-rs clean-all fmt fmt-rs lint lint-rs test check env-info
+.PHONY: help install dev dev-fe build build-debug clean clean-fe clean-rs clean-all fmt fmt-rs lint lint-rs test check env-info cli cli-install cli-uninstall cli-help
+
+# CLI 安装位置（可覆盖：make cli-install CLI_PREFIX=/usr/local）
+CLI_PREFIX ?= $(HOME)/.local
+CLI_BIN_DIR := $(CLI_PREFIX)/bin
+CLI_BIN := $(CLI_BIN_DIR)/zhmm-cli
 
 # 默认目标：显示帮助信息
 help:
@@ -19,6 +24,12 @@ help:
 	@echo "  make test          - 运行 Rust 单元测试"
 	@echo "  make check         - Rust 编译检查（不生成产物，速度快）"
 	@echo "  make env-info      - 显示开发环境信息"
+	@echo "  ----- CLI 模式 -----"
+	@echo "  make cli           - 构建 zhmm-cli release 二进制"
+	@echo "  make cli-install   - 构建并安装到 ~/.local/bin（可改 CLI_PREFIX）"
+	@echo "  make cli-uninstall - 卸载 zhmm-cli"
+	@echo "  make cli-help      - 打印 zhmm-cli 速查卡（不用记子命令）"
+
 
 # 安装所有依赖
 install:
@@ -113,3 +124,59 @@ env-info:
 	@echo "--- Tauri CLI ---"
 	@npx tauri --version
 	@echo "================"
+
+# ============== CLI 模式 ==============
+
+# 构建 zhmm-cli release
+cli:
+	@echo "构建 zhmm-cli release 二进制..."
+	cd src-tauri && cargo build --release --bin zhmm-cli
+	@echo ""
+	@echo "✓ 构建完成：src-tauri/target/release/zhmm-cli"
+	@echo "  下一步：make cli-install  把它装到 PATH 里"
+
+# 安装到 ~/.local/bin（或自定义 CLI_PREFIX）
+cli-install: cli
+	@mkdir -p "$(CLI_BIN_DIR)"
+	@cp src-tauri/target/release/zhmm-cli "$(CLI_BIN)"
+	@echo "✓ 已安装：$(CLI_BIN)"
+	@case ":$$PATH:" in *":$(CLI_BIN_DIR):"*) ;; *) echo "⚠ 提醒：$(CLI_BIN_DIR) 不在 PATH 中，请把以下行加入 ~/.zshrc："; echo "  export PATH=\"$(CLI_BIN_DIR):\$$PATH\"";; esac
+	@echo ""
+	@echo "试一下：zhmm-cli --help"
+
+# 卸载
+cli-uninstall:
+	@rm -f "$(CLI_BIN)"
+	@echo "✓ 已卸载：$(CLI_BIN)"
+
+# 速查卡（不用记子命令，直接 make cli-help）
+cli-help:
+	@echo "================ zhmm-cli 速查卡 ================"
+	@echo "通用：每条命令都需要 -f <密库.zmb> -a <账号>"
+	@echo "  推荐先 export ZHMM_FILE=~/Documents/my.zmb ZHMM_ACCOUNT=ws"
+	@echo "  之后所有命令都可省略 -f / -a；密码用 -p 或 ZHMM_PASSWORD"
+	@echo ""
+	@echo "-- 库管理 --"
+	@echo "  zhmm-cli init                       创建新密库"
+	@echo "  zhmm-cli backup                     在 .backups/ 加密备份"
+	@echo "  zhmm-cli rekey                      改主密码（自动保险备份）"
+	@echo ""
+	@echo "-- 查询 --"
+	@echo "  zhmm-cli list                       列出全部条目"
+	@echo "  zhmm-cli list -q github             关键字搜索（user/url/desc）"
+	@echo "  zhmm-cli list -r 工作 -t bank       按 role / tag 过滤"
+	@echo "  zhmm-cli get  <id>                  显示某条（含密码）"
+	@echo "  zhmm-cli get  <id> -p | pbcopy      仅密码、塞入剪贴板"
+	@echo "  zhmm-cli totp <id>                  取一次性验证码"
+	@echo ""
+	@echo "-- 写入 --"
+	@echo "  zhmm-cli add  -u alice --url https://github.com"
+	@echo "  zhmm-cli add  -u bob --pwd ''       --pwd '' 表示随机生成 16 位"
+	@echo "  zhmm-cli del  <id>                  删除"
+	@echo ""
+	@echo "-- 导入导出 --"
+	@echo "  zhmm-cli export-xlsx out.xlsx"
+	@echo "  zhmm-cli import-xlsx in.xlsx"
+	@echo ""
+	@echo "忘了某个子命令的细节？跑：zhmm-cli help <子命令>"
+	@echo "=================================================="
