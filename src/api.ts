@@ -24,6 +24,7 @@ export interface PasswordSummary {
   phone: string;
   email: string;
   url: string;
+  desc: string;
   tags: string[];
   has_totp: boolean;
   utime: number;

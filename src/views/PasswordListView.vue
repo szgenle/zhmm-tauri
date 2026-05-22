@@ -82,7 +82,7 @@ const filtered = computed<PasswordSummary[]>(() => {
   if (!q) return result;
   return result.filter((row) => {
     const fields = [
-      row.role, row.userID, row.phone, row.email, row.url,
+      row.role, row.userID, row.phone, row.email, row.url, row.desc,
       ...(row.tags || []),
     ];
     return fields.some((f) => normalize(String(f || "")).includes(q));
@@ -268,13 +268,23 @@ interface ColumnConfig {
 const allColumnConfigs: ColumnConfig[] = [
   { key: "role", label: "分类" },
   { key: "userID", label: "账号", fixed: true },
+  { key: "url", label: "网址" },
+  { key: "email", label: "邮箱" },
+  { key: "phone", label: "手机" },
   { key: "tags", label: "标签" },
+  { key: "desc", label: "备注" },
   { key: "totp", label: "2FA" },
   { key: "utime", label: "更新时间" },
   { key: "actions", label: "操作", fixed: true },
 ];
 
-const STORAGE_KEY = "zhmm_visible_columns";
+const STORAGE_KEY = "zhmm_visible_columns_v2";
+
+// 默认勾选：分类、账号(fixed)、网址、邮箱、手机、标签、备注、操作(fixed)
+// 2FA 和更新时间 默认隐藏
+const DEFAULT_VISIBLE_KEYS = [
+  "role", "userID", "url", "email", "phone", "tags", "desc", "actions",
+];
 
 function loadVisibleColumns(): string[] {
   try {
@@ -284,8 +294,7 @@ function loadVisibleColumns(): string[] {
       if (Array.isArray(arr) && arr.length > 0) return arr;
     }
   } catch {}
-  // 默认隐藏 2FA 列（数据通常较少，且当存在 2FA 时会在账号列下方展示）
-  return allColumnConfigs.map((c) => c.key).filter((k) => k !== "totp");
+  return [...DEFAULT_VISIBLE_KEYS];
 }
 
 const visibleColumnKeys = ref<string[]>(loadVisibleColumns());
@@ -359,6 +368,44 @@ const allColumns: DataTableColumns<PasswordSummary> = [
         }
       );
     },
+  },
+  {
+    title: "网址",
+    key: "url",
+    width: 200,
+    ellipsis: { tooltip: true },
+    render(row) {
+      if (!row.url) return "";
+      return h(
+        'span',
+        {
+          style: 'cursor: pointer; color: var(--n-color-primary, #18a058);',
+          title: '点击打开',
+          onClick: (e: MouseEvent) => {
+            e.stopPropagation();
+            handleOpenUrl(row);
+          },
+        },
+        row.url
+      );
+    },
+  },
+  {
+    title: "邮箱",
+    key: "email",
+    width: 180,
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: "手机",
+    key: "phone",
+    width: 130,
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: "备注",
+    key: "desc",
+    ellipsis: { tooltip: true },
   },
   {
     title: "2FA",
