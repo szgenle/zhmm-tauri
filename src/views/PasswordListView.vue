@@ -31,9 +31,23 @@ const message = useMessage();
 const dialog = useDialog();
 
 const searchQuery = ref("");
+const selectedRole = ref("");  // 空字符串表示"全部"
 const data = ref<PasswordSummary[]>([]);
 const loading = ref(false);
 const selectedTags = ref<string[]>([]);
+
+/** 从当前数据中提取所有分类，用于下拉选项 */
+const roleOptions = computed(() => {
+  const roles = new Set<string>();
+  for (const entry of data.value) {
+    if (entry.role) roles.add(entry.role);
+  }
+  const opts = [{ label: "全部分类", value: "" }];
+  for (const r of roles) {
+    opts.push({ label: r, value: r });
+  }
+  return opts;
+});
 
 // 密码明文定时隐藏
 const { revealedPasswords, revealPassword } = usePasswordReveal(message);
@@ -54,11 +68,17 @@ function displayName(row: PasswordSummary): string {
 
 const filtered = computed<PasswordSummary[]>(() => {
   let result = data.value;
+  // 按分类筛选
+  if (selectedRole.value) {
+    result = result.filter((row) => row.role === selectedRole.value);
+  }
+  // 按标签筛选
   if (selectedTags.value.length > 0) {
     result = result.filter((row) =>
       selectedTags.value.every((t) => (row.tags || []).includes(t))
     );
   }
+  // 按搜索关键词筛选
   const q = normalize(searchQuery.value);
   if (!q) return result;
   return result.filter((row) => {
@@ -338,12 +358,19 @@ onMounted(loadData);
     <TagSidebar :entries="data" :selected-tags="selectedTags" @update:selected-tags="v => selectedTags = v" />
     <div class="pwd-main">
     <n-space justify="space-between" style="margin-bottom: 16px">
-      <n-input
-        v-model:value="searchQuery"
-        placeholder="搜索密码"
-        clearable
-        style="width: 280px"
-      />
+      <n-space>
+        <n-select
+          v-model:value="selectedRole"
+          :options="roleOptions"
+          style="width: 120px"
+        />
+        <n-input
+          v-model:value="searchQuery"
+          placeholder="搜索密码"
+          clearable
+          style="width: 280px"
+        />
+      </n-space>
       <n-button type="primary" @click="openAdd">
         <template #icon>
           <n-icon><AddOutline /></n-icon>
@@ -354,7 +381,7 @@ onMounted(loadData);
 
     <!-- 空库欢迎页 -->
     <WelcomeWidget
-      v-if="!loading && data.length === 0 && !searchQuery.trim() && selectedTags.length === 0"
+      v-if="!loading && data.length === 0 && !searchQuery.trim() && selectedTags.length === 0 && !selectedRole"
       @add="openAdd"
     />
     <n-data-table
