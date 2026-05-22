@@ -288,7 +288,7 @@ const allColumnConfigs: ColumnConfig[] = [
   { key: "actions", label: "操作", fixed: true },
 ];
 
-const STORAGE_KEY = "zhmm_visible_columns_v2";
+const STORAGE_KEY = "zhmm_visible_columns_v3";
 
 // 默认勾选：分类、账号(fixed)、网址、邮箱、手机、标签、备注、操作(fixed)
 // 2FA 和更新时间 默认隐藏
