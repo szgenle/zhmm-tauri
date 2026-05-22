@@ -8,6 +8,7 @@ license = "MIT"
 repository = "https://github.com/szgenle/zhmm-tauri"
 homepage = "https://github.com/szgenle/zhmm-tauri"
 readme = "../README.md"
+default-run = "zhmm-tauri"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,6 +18,14 @@ readme = "../README.md"
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "zhmm_tauri_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "zhmm-tauri"
+path = "src/main.rs"
+
+[[bin]]
+name = "zhmm-cli"
+path = "src/bin/zhmm_cli.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -56,4 +65,8 @@ thiserror = "1"
 # 导入导出 Excel
 calamine = "0.26"
 rust_xlsxwriter = "0.79"
+
+# CLI 专用
+clap = { version = "4", features = ["derive", "env"] }
+rpassword = "7"
 

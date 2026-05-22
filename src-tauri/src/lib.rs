@@ -1,15 +1,15 @@
 mod accounts;
 mod anti_capture;
 mod commands;
-mod crypto;
-mod errors;
+pub mod crypto;
+pub mod errors;
 mod io_json;
-mod io_xlsx;
-mod models;
+pub mod io_xlsx;
+pub mod models;
 mod settings;
 mod site_catalog;
-mod totp;
-mod vault;
+pub mod totp;
+pub mod vault;
 
 use accounts::RecentStore;
 use settings::SettingsState;
