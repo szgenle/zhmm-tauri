@@ -1,4 +1,4 @@
-import type { ThemePreset } from "../index";
+import type { ThemePreset } from "..";
 
 export const warmPreset: ThemePreset = {
   key: "warm",
