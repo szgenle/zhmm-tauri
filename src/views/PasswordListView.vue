@@ -7,6 +7,7 @@ import {
   CreateOutline,
   EyeOutline,
   OpenOutline,
+  SearchOutline,
   SettingsOutline,
 } from "@vicons/ionicons5";
 import type { DataTableColumns } from "naive-ui";
@@ -457,28 +458,31 @@ onMounted(loadData);
   <div class="pwd-page">
     <TagSidebar :entries="data" :selected-tags="selectedTags" @update:selected-tags="v => selectedTags = v" />
     <div class="pwd-main">
-    <n-space justify="space-between" style="margin-bottom: 16px">
-      <n-space>
+    <div class="toolbar">
+      <div class="toolbar-left">
         <n-select
           v-model:value="selectedRole"
           :options="roleOptions"
-          style="width: 120px"
+          style="width: 130px"
         />
         <n-input
           v-model:value="searchQuery"
-          placeholder="搜索密码"
+          placeholder="搜索账号..."
           clearable
-          style="width: 280px"
-        />
-      </n-space>
-      <n-space>
+          style="width: 260px"
+        >
+          <template #prefix>
+            <n-icon :size="16" style="opacity: 0.5"><SearchOutline /></n-icon>
+          </template>
+        </n-input>
+      </div>
+      <div class="toolbar-right">
         <n-popover trigger="click" placement="bottom-end">
           <template #trigger>
-            <n-button quaternary>
+            <n-button quaternary circle>
               <template #icon>
                 <n-icon><SettingsOutline /></n-icon>
               </template>
-              列设置
             </n-button>
           </template>
           <div style="min-width: 120px">
@@ -497,10 +501,10 @@ onMounted(loadData);
           <template #icon>
             <n-icon><AddOutline /></n-icon>
           </template>
-          添加密码
+          添加
         </n-button>
-      </n-space>
-    </n-space>
+      </div>
+    </div>
 
     <!-- 空库欢迎页 -->
     <WelcomeWidget
@@ -552,15 +556,39 @@ onMounted(loadData);
 <style scoped>
 .pwd-page {
   display: flex;
-  /* header 48px + content padding 16px*2 = 80px */
-  height: calc(100vh - 80px);
+  /* header 52px + content padding 20px*2 = 92px */
+  height: calc(100vh - 92px);
   overflow: hidden;
+  gap: 0;
 }
 .pwd-main {
   flex: 1;
   overflow-y: auto;
   padding: 0;
   min-height: 0;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: var(--app-card-bg);
+  border: 1px solid var(--app-border-color);
+  border-radius: 10px;
+  box-shadow: var(--app-shadow-sm);
+  backdrop-filter: blur(8px);
+  gap: 12px;
+}
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 /* 用户名单击复制 */
 .username-copy {

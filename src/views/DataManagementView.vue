@@ -132,7 +132,7 @@ async function confirmBackup() {
 </script>
 
 <template>
-  <div>
+  <div class="data-mgmt">
     <n-card title="Excel 导入导出" style="margin-bottom: 16px">
       <n-space vertical size="medium">
         <n-space>
@@ -203,3 +203,9 @@ async function confirmBackup() {
     <SiteCatalogDialog v-model:show="showSiteCatalog" />
   </div>
 </template>
+
+<style scoped>
+.data-mgmt {
+  max-width: 700px;
+}
+</style>

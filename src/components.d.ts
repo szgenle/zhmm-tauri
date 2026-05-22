@@ -52,6 +52,7 @@ declare module 'vue' {
     NTabs: typeof import('naive-ui')['NTabs']
     NTag: typeof import('naive-ui')['NTag']
     NText: typeof import('naive-ui')['NText']
+    NTooltip: typeof import('naive-ui')['NTooltip']
     PasswordEditDialog: typeof import('./components/PasswordEditDialog.vue')['default']
     PasswordHistoryDialog: typeof import('./components/PasswordHistoryDialog.vue')['default']
     PasswordStrengthBar: typeof import('./components/PasswordStrengthBar.vue')['default']

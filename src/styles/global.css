@@ -1,0 +1,169 @@
+/* ===== Global Styles - 账号小本本 ===== */
+
+/* --- CSS Variable Defaults (overridden by theme system) --- */
+:root {
+  --app-bg: #f8fafc;
+  --app-card-bg: #ffffff;
+  --app-card-border: rgba(0, 0, 0, 0.06);
+  --app-header-bg: rgba(255, 255, 255, 0.8);
+  --app-header-blur: 12px;
+  --app-header-shadow: 0 1px 8px rgba(0, 0, 0, 0.05);
+  --app-sidebar-bg: rgba(248, 250, 255, 0.6);
+  --app-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --app-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --app-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --app-hover-lift: -2px;
+  --app-border-color: rgba(0, 0, 0, 0.06);
+}
+
+/* --- Base Reset & Fundamentals --- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--app-bg);
+  min-height: 100vh;
+  transition: background 0.4s ease;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* --- Scrollbar Styling --- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Dark mode scrollbar */
+html[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+/* --- Selection --- */
+::selection {
+  background: rgba(64, 152, 252, 0.2);
+}
+
+/* --- Transitions --- */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-fade-enter-active {
+  transition: all 0.25s ease-out;
+}
+
+.slide-fade-leave-active {
+  transition: all 0.2s ease-in;
+}
+
+.slide-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.slide-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* --- Global Card Enhancements --- */
+.n-card {
+  box-shadow: var(--app-shadow-sm) !important;
+  border: 1px solid var(--app-card-border) !important;
+  backdrop-filter: blur(8px);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.n-card:hover {
+  box-shadow: var(--app-shadow-md) !important;
+}
+
+/* --- Data Table Enhancements --- */
+.n-data-table {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.n-data-table .n-data-table-tr:hover .n-data-table-td {
+  transition: background-color 0.15s ease;
+}
+
+/* --- Button Polish --- */
+.n-button {
+  transition: all 0.2s ease !important;
+}
+
+.n-button--primary-type:not(.n-button--disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: var(--app-shadow-sm);
+}
+
+/* --- Input Focus Glow --- */
+.n-input:focus-within {
+  box-shadow: 0 0 0 2px rgba(64, 152, 252, 0.12);
+}
+
+/* --- Tag pill effect --- */
+.n-tag {
+  transition: all 0.15s ease;
+}
+
+/* --- Utility Classes --- */
+.app-card {
+  background: var(--app-card-bg);
+  border: 1px solid var(--app-card-border);
+  border-radius: 12px;
+  box-shadow: var(--app-shadow-sm);
+  backdrop-filter: blur(8px);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.app-card:hover {
+  box-shadow: var(--app-shadow-md);
+  transform: translateY(var(--app-hover-lift));
+}

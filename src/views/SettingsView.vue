@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { inject, ref, watch } from "vue";
+import type { Ref } from "vue";
 import { settings, saveSettings } from "../settings";
+import { type VisualStyle, visualStyleOptions } from "../themes";
 import RekeyDialog from "../components/RekeyDialog.vue";
 
 const message = useMessage();
 
 const busy = ref(false);
+
+// visual style from App.vue provide
+const visualStyle = inject<Ref<VisualStyle>>("visualStyle")!;
+const changeVisualStyle = inject<(style: VisualStyle) => void>("changeVisualStyle")!;
 
 // 数字类设置使用本地表单暂存，避免每次输入都触发后端写入
 const form = ref({
@@ -94,19 +100,84 @@ const showRekey = ref(false);
     </n-card>
     <n-card title="外观" style="margin-bottom: 16px">
       <n-form label-placement="left" label-width="160">
-        <n-form-item label="主题">
+        <n-form-item label="配色方案">
           <n-radio-group :value="settings.theme" @update:value="onThemeChange">
             <n-radio-button value="auto">跟随系统</n-radio-button>
             <n-radio-button value="light">亮色</n-radio-button>
             <n-radio-button value="dark">暗色</n-radio-button>
           </n-radio-group>
         </n-form-item>
+        <n-form-item label="视觉风格">
+          <div class="style-grid">
+            <div
+              v-for="opt in visualStyleOptions"
+              :key="opt.key"
+              class="style-card"
+              :class="{ active: visualStyle === opt.key }"
+              @click="changeVisualStyle(opt.key)"
+            >
+              <div class="style-color" :style="{ background: opt.color }" />
+              <div class="style-info">
+                <div class="style-label">{{ opt.label }}</div>
+                <div class="style-desc">{{ opt.description }}</div>
+              </div>
+            </div>
+          </div>
+        </n-form-item>
       </n-form>
-      <n-text depth="3" style="font-size: 12px">主题切换会立即生效并自动保存。</n-text>
+      <n-text depth="3" style="font-size: 12px">配色方案和视觉风格切换会立即生效并自动保存。</n-text>
     </n-card>
     <n-card title="关于">
-      <p>zhmm · Tauri 2.0 + Vue 3</p>
+      <p>账号小本本 · Tauri 2.0 + Vue 3</p>
     </n-card>
     <RekeyDialog v-model:show="showRekey" />
   </div>
 </template>
+
+<style scoped>
+.style-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+}
+.style-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 2px solid var(--app-border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.style-card:hover {
+  border-color: var(--n-primary-color);
+  box-shadow: var(--app-shadow-sm);
+}
+.style-card.active {
+  border-color: var(--n-primary-color);
+  background: var(--app-card-bg);
+  box-shadow: var(--app-shadow-md);
+}
+.style-color {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.style-info {
+  min-width: 0;
+}
+.style-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.style-desc {
+  font-size: 11px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+</style>

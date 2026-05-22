@@ -69,20 +69,27 @@ onUnmounted(() => {
 
 <template>
   <n-layout style="height: 100vh">
-    <n-layout-header bordered class="header">
-      <n-tabs :value="tabValue" type="line" @update:value="tabValue = $event">
-        <n-tab name="passwords">账号管理</n-tab>
-        <n-tab name="data-management">数据管理</n-tab>
-        <n-tab name="settings">系统设置</n-tab>
-      </n-tabs>
-      <n-button quaternary size="small" @click="handleLock">
-        <template #icon>
-          <n-icon><LockClosedOutline /></n-icon>
+    <n-layout-header class="header">
+      <div class="header-left">
+        <span class="brand">账号小本本</span>
+        <n-tabs :value="tabValue" type="line" @update:value="tabValue = $event" class="nav-tabs">
+          <n-tab name="passwords">账号管理</n-tab>
+          <n-tab name="data-management">数据管理</n-tab>
+          <n-tab name="settings">系统设置</n-tab>
+        </n-tabs>
+      </div>
+      <n-tooltip trigger="hover">
+        <template #trigger>
+          <n-button quaternary circle size="small" @click="handleLock">
+            <template #icon>
+              <n-icon :size="18"><LockClosedOutline /></n-icon>
+            </template>
+          </n-button>
         </template>
-        锁定
-      </n-button>
+        锁定密码库
+      </n-tooltip>
     </n-layout-header>
-    <n-layout-content content-style="padding: 16px;">
+    <n-layout-content content-style="padding: 20px 24px;">
       <router-view />
     </n-layout-content>
   </n-layout>
@@ -90,10 +97,42 @@ onUnmounted(() => {
 
 <style scoped>
 .header {
-  height: 48px;
-  padding: 0 16px;
+  height: 52px;
+  padding: 0 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  background: var(--app-header-bg);
+  backdrop-filter: blur(var(--app-header-blur));
+  -webkit-backdrop-filter: blur(var(--app-header-blur));
+  box-shadow: var(--app-header-shadow);
+  border-bottom: 1px solid var(--app-border-color);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.nav-tabs :deep(.n-tabs-tab) {
+  font-weight: 500;
+  transition: color 0.2s ease, opacity 0.2s ease;
+}
+
+.nav-tabs :deep(.n-tabs-tab--active) {
+  font-weight: 600;
 }
 </style>

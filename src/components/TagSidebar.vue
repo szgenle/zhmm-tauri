@@ -88,13 +88,15 @@ const collapsed = ref(false);
 .tag-sidebar {
   width: 200px;
   min-width: 200px;
-  border-right: 1px solid var(--n-border-color, #e0e0e0);
+  background: var(--app-sidebar-bg);
+  border-right: 1px solid var(--app-border-color);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
   height: 100%;
-  transition: width 0.2s, min-width 0.2s;
+  transition: width 0.25s ease, min-width 0.25s ease, background 0.3s ease;
+  backdrop-filter: blur(8px);
 }
 .tag-sidebar.collapsed {
   width: 36px;
@@ -104,9 +106,10 @@ const collapsed = ref(false);
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 10px 6px;
-  font-weight: bold;
+  padding: 12px 12px 8px;
+  font-weight: 600;
   font-size: 13px;
+  letter-spacing: -0.01em;
 }
 .sidebar-body {
   flex: 1;
@@ -117,17 +120,20 @@ const collapsed = ref(false);
   color: var(--n-text-color-3, #999);
   font-size: 12px;
   padding: 8px 0;
+  opacity: 0.8;
 }
 .tag-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 2px;
+  padding: 5px 6px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 6px;
+  transition: background 0.15s ease, transform 0.15s ease;
 }
 .tag-item:hover {
   background: var(--n-color-hover, rgba(0,0,0,0.04));
+  transform: translateX(2px);
 }
 .tag-label {
   font-size: 13px;
@@ -139,5 +145,6 @@ const collapsed = ref(false);
 .tag-count {
   font-size: 11px;
   color: var(--n-text-color-3, #999);
+  opacity: 0.7;
 }
 </style>

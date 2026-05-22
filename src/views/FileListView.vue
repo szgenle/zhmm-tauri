@@ -219,32 +219,42 @@ function fileName(path: string): string {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 48px 24px;
+  padding: 60px 24px;
   box-sizing: border-box;
+  background: var(--app-bg);
 }
 .filelist-container {
   width: 100%;
-  max-width: 720px;
+  max-width: 600px;
+  background: var(--app-card-bg);
+  border: 1px solid var(--app-card-border);
+  border-radius: 16px;
+  padding: 40px 36px;
+  box-shadow: var(--app-shadow-lg);
+  backdrop-filter: blur(12px);
 }
 .logo {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
 .logo h1 {
-  margin: 12px 0 4px;
-  font-size: 22px;
+  margin: 14px 0 4px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 .subtitle {
   color: var(--n-text-color-3);
   font-size: 13px;
   margin: 0;
+  opacity: 0.8;
 }
 .actions {
   display: flex;
   justify-content: center;
-  margin: 16px 0;
+  margin: 20px 0;
 }
 .recent-list {
   display: flex;
@@ -254,15 +264,17 @@ function fileName(path: string): string {
 .recent-item {
   display: flex;
   align-items: center;
-  padding: 12px 14px;
-  border: 1px solid var(--n-border-color, #e0e0e0);
-  border-radius: 6px;
+  padding: 14px 16px;
+  background: var(--app-card-bg);
+  border: 1px solid var(--app-border-color);
+  border-radius: 10px;
   cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .recent-item:hover {
-  background-color: var(--n-color-hover, rgba(0, 0, 0, 0.04));
-  border-color: var(--n-primary-color, #18a058);
+  transform: translateY(var(--app-hover-lift));
+  box-shadow: var(--app-shadow-md);
+  border-color: var(--n-primary-color, #4098fc);
 }
 .item-main {
   flex: 1;
@@ -270,7 +282,7 @@ function fileName(path: string): string {
 }
 .item-name {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   margin-bottom: 2px;
 }
 .item-path {
@@ -280,6 +292,7 @@ function fileName(path: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
   margin-bottom: 4px;
+  opacity: 0.7;
 }
 .item-meta {
   display: flex;
