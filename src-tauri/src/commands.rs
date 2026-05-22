@@ -352,7 +352,7 @@ pub fn path_exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
 }
 
-/// 检查 `app_data_dir/vault.zhmm` 旧版固定路径文件是否存在。
+/// 检查 `app_data_dir/vault.zmb` 旧版固定路径文件是否存在。
 ///
 /// 旧版（v1）使用 AES-GCM + 单口令派生，新版改为 SM4-GCM + 双因子（账号+口令），
 /// 加密格式与 KDF 输入均不兼容，无法直接读取。FileListView 检测到该文件存在
@@ -361,7 +361,7 @@ pub fn path_exists(path: String) -> bool {
 pub fn legacy_vault_exists(app: tauri::AppHandle) -> bool {
     use tauri::Manager;
     match app.path().app_data_dir() {
-        Ok(dir) => dir.join("vault.zhmm").exists(),
+        Ok(dir) => dir.join("vault.zmb").exists(),
         Err(_) => false,
     }
 }

@@ -1,6 +1,6 @@
 //! 加密 JSON 备份与恢复（用户自定义备份密码）
 //!
-//! 与 vault.zhmm 共用同一加密栈（Argon2id + SM4-GCM v6）。
+//! 与 vault.zmb 共用同一加密栈（Argon2id + SM4-GCM v6）。
 //! 由于备份场景不需要账号名因素，使用固定常量 "zhmm-backup" 作为 account
 //! 输入；用户输入的备份密码作为唯一可变因子。
 

@@ -13,6 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AddRoleDialog: typeof import('./components/AddRoleDialog.vue')['default']
     BackupListDialog: typeof import('./components/BackupListDialog.vue')['default']
+    CreateVaultDialog: typeof import('./components/CreateVaultDialog.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
     NButton: typeof import('naive-ui')['NButton']
     NCard: typeof import('naive-ui')['NCard']
@@ -62,6 +63,7 @@ declare module 'vue' {
     TagManagementDialog: typeof import('./components/TagManagementDialog.vue')['default']
     TagSidebar: typeof import('./components/TagSidebar.vue')['default']
     TotpCell: typeof import('./components/TotpCell.vue')['default']
+    UnlockDialog: typeof import('./components/UnlockDialog.vue')['default']
     WelcomeWidget: typeof import('./components/WelcomeWidget.vue')['default']
   }
 }

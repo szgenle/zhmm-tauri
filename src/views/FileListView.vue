@@ -51,7 +51,7 @@ onMounted(async () => {
   } catch {
     // 忽略
   }
-  // 检测旧版 v1 vault.zhmm 是否存在（不兼容提示）
+  // 检测旧版 v1 vault.zmb 是否存在（不兼容提示）
   try {
     showLegacyBanner.value = await api.legacyVaultExists();
   } catch {
@@ -72,7 +72,7 @@ async function openExternal() {
     const selected = await openDialog({
       title: "打开账号库",
       multiple: false,
-      filters: [{ name: "ZHMM 账号库", extensions: ["zhmm"] }],
+      filters: [{ name: "ZMB 账号库", extensions: ["zmb"] }],
     });
     if (typeof selected !== "string" || !selected) return;
 
@@ -125,7 +125,7 @@ function fileName(path: string): string {
       <div class="logo">
         <n-icon size="44" :depth="3"><ShieldCheckmarkOutline /></n-icon>
         <h1>账号小本本</h1>
-        <p class="subtitle">选择一个账号库以解锁，或新建/打开任意 .zhmm 文件</p>
+        <p class="subtitle">选择一个账号库以解锁，或新建/打开任意 .zmb 文件</p>
       </div>
 
       <n-alert
@@ -137,7 +137,7 @@ function fileName(path: string): string {
         style="margin-bottom: 16px"
       >
         发现旧版本遗留的
-        <n-text code>vault.zhmm</n-text>
+        <n-text code>vault.zmb</n-text>
         文件（AES-GCM 单口令格式），新版本采用 SM4-GCM 双因子加密，
         <b>无法直接读取</b>。请使用旧版本启动并通过"导出 xlsx"备份数据，
         然后在新版本中"新建账号库"并通过"导入 xlsx"恢复。
@@ -155,7 +155,7 @@ function fileName(path: string): string {
             <template #icon>
               <n-icon><FolderOpenOutline /></n-icon>
             </template>
-            打开 .zhmm 文件
+            打开 .zmb 文件
           </n-button>
           <n-button quaternary @click="refresh" :loading="loading">
             <template #icon>

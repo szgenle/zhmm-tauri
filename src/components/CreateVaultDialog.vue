@@ -7,7 +7,7 @@ import PasswordStrengthBar from "./PasswordStrengthBar.vue";
 
 /**
  * 创建新账号库对话框：
- *   1. 用户选保存路径（必须以 .zhmm 结尾）
+ *   1. 用户选保存路径（必须以 .zmb 结尾）
  *   2. 输入账号名（参与 KDF，遗忘后无法解密）
  *   3. 输入两次主密码
  *   4. 调 createVaultAt 落地，bcryptHash 后写入最近访问
@@ -71,11 +71,11 @@ async function chooseFile() {
   try {
     const selected = await saveDialog({
       title: "保存为",
-      defaultPath: "zhmm.zhmm",
-      filters: [{ name: "ZHMM 账号库", extensions: ["zhmm"] }],
+      defaultPath: "zhmm.zmb",
+      filters: [{ name: "ZMB 账号库", extensions: ["zmb"] }],
     });
     if (typeof selected === "string" && selected) {
-      filePath.value = selected.endsWith(".zhmm") ? selected : `${selected}.zhmm`;
+      filePath.value = selected.endsWith(".zmb") ? selected : `${selected}.zmb`;
     }
   } catch (e: any) {
     message.error(`选择文件失败: ${e}`);

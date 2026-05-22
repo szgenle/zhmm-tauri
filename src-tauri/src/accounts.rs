@@ -1,6 +1,6 @@
 //! 最近访问的密码库列表（明文 JSON 配置）
 //!
-//! 与 Python 版 `saved_files` 等价：记录每个曾访问过的 .zhmm 文件的
+//! 与 Python 版 `saved_files` 等价：记录每个曾访问过的 .zmb 文件的
 //! 路径、账号名、bcrypt 哈希后的密码（仅用于 UI 层快速预校验避免
 //! 触发昂贵的 Argon2id），以及最近访问时间。
 

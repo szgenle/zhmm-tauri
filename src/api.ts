@@ -203,7 +203,7 @@ export const api = {
   pathExists(path: string): Promise<boolean> {
     return invoke("path_exists", { path });
   },
-  // 旧版 v1 vault.zhmm 不兼容检测
+  // 旧版 v1 vault.zmb 不兼容检测
   legacyVaultExists(): Promise<boolean> {
     return invoke("legacy_vault_exists");
   },

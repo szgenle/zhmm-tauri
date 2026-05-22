@@ -76,8 +76,8 @@ async function handleDownloadTemplate() {
 async function startBackup() {
   const path = await saveDialog({
     title: "保存加密备份",
-    defaultPath: `zhmm-backup-${new Date().toISOString().slice(0, 10)}.zhmm`,
-    filters: [{ name: "zhmm 加密备份", extensions: ["zhmm"] }],
+    defaultPath: `zhmm-backup-${new Date().toISOString().slice(0, 10)}.zmb`,
+    filters: [{ name: "zmb 加密备份", extensions: ["zmb"] }],
   });
   if (!path) return;
   backupPath.value = path as string;
@@ -90,7 +90,7 @@ async function startRestore() {
   const path = await openDialog({
     title: "选择加密备份文件",
     multiple: false,
-    filters: [{ name: "zhmm 加密备份", extensions: ["zhmm"] }],
+    filters: [{ name: "zmb 加密备份", extensions: ["zmb"] }],
   });
   if (!path) return;
   dialog.warning({

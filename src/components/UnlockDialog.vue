@@ -9,7 +9,7 @@ import { api, type RecentEntry } from "../api";
  * 两种使用场景：
  *   1. 点击最近访问条目：传入 path/account/hashpw，account 不可改，
  *      提交时先 bcryptVerify(密码, hashpw) 做 UI 层快速校验，再 unlockWithPath。
- *   2. 通过 "打开外部 .zhmm" 选了一个不在最近访问中的文件：传入 path，
+ *   2. 通过 "打开外部 .zmb" 选了一个不在最近访问中的文件：传入 path，
  *      account 由用户输入，hashpw 不传，跳过 bcrypt 预校验直接 unlockWithPath。
  */
 const props = defineProps<{
