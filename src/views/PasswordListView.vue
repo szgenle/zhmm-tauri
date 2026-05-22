@@ -4,7 +4,6 @@ import { NButton, NIcon, NTag, NSpace, NCheckbox, NPopover, useMessage, useDialo
 import {
   AddOutline,
   CopyOutline,
-  CreateOutline,
   EyeOutline,
   SearchOutline,
   SettingsOutline,
@@ -153,6 +152,14 @@ function handleContextSelect(key: string) {
 function rowProps(row: PasswordSummary) {
   return {
     onContextmenu: (e: MouseEvent) => onRowContextMenu(e, row),
+    onDblclick: (e: MouseEvent) => {
+      // 避免双击选中文本
+      const sel = window.getSelection();
+      if (sel) sel.removeAllRanges();
+      e.preventDefault();
+      openEdit(row);
+    },
+    style: 'cursor: default; user-select: none;',
   };
 }
 
@@ -428,16 +435,14 @@ const allColumns: DataTableColumns<PasswordSummary> = [
   {
     title: "操作",
     key: "actions",
-    width: 180,
+    width: 150,
     render(row) {
-      return h(NSpace, { size: 0 }, {
+      return h(NSpace, { size: 4, wrap: false, wrapItem: false }, {
         default: () => [
           h(NButton, { size: "small", quaternary: true, onClick: () => handleCopy(row) },
             { default: () => "复制", icon: () => h(NIcon, null, { default: () => h(CopyOutline) }) }),
           h(NButton, { size: "small", quaternary: true, type: revealedPasswords.value.has(row.id) ? 'warning' : 'default', onClick: () => revealPassword(row) },
             { default: () => revealedPasswords.value.has(row.id) ? "隐藏" : "显示", icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }),
-          h(NButton, { size: "small", quaternary: true, onClick: () => openEdit(row) },
-            { default: () => "编辑", icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) }),
         ],
       });
     },
