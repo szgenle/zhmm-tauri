@@ -10,6 +10,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # 使 actions/checkout、actions/setup-node 等 JS Actions 在 Node.js 24 上运行，
+  # 消除 Node.js 20 弃用告警（参考 GitHub 2025-09-19 公告）
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   frontend:
     name: Frontend (typecheck + build)

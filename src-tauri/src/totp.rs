@@ -200,10 +200,7 @@ fn urlencoding_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(h), Some(l)) = (
-                hex_digit(bytes[i + 1]),
-                hex_digit(bytes[i + 2]),
-            ) {
+            if let (Some(h), Some(l)) = (hex_digit(bytes[i + 1]), hex_digit(bytes[i + 2])) {
                 out.push(h * 16 + l);
                 i += 3;
                 continue;

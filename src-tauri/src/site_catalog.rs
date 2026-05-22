@@ -46,7 +46,7 @@ struct CatalogItem {
     tags: Vec<String>,
 }
 
-static CATALOG: LazyLock<CatalogData> = LazyLock::new(|| load_catalog());
+static CATALOG: LazyLock<CatalogData> = LazyLock::new(load_catalog);
 
 fn load_catalog() -> CatalogData {
     let mut sites = HashMap::new();
@@ -150,7 +150,13 @@ fn extract_host(input: &str) -> String {
         return url.host_str().unwrap_or("").to_string();
     }
     // 移除端口和路径
-    s.split('/').next().unwrap_or("").split(':').next().unwrap_or("").to_string()
+    s.split('/')
+        .next()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_string()
 }
 
 /// 提取可注册域名（简化版：取最后两段，特殊处理 .com.cn 等）
@@ -161,8 +167,8 @@ fn registrable_domain(host: &str) -> String {
     }
     // 特殊二级后缀
     let special_suffixes = [
-        "com.cn", "net.cn", "org.cn", "gov.cn", "edu.cn",
-        "co.uk", "co.jp", "co.kr", "com.au", "com.br",
+        "com.cn", "net.cn", "org.cn", "gov.cn", "edu.cn", "co.uk", "co.jp", "co.kr", "com.au",
+        "com.br",
     ];
     let last_two = format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1]);
     for suffix in &special_suffixes {

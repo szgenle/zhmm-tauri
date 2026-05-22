@@ -28,7 +28,9 @@ pub struct VaultStatus {
 pub fn vault_status(state: State<'_, VaultState>) -> VaultStatus {
     VaultStatus {
         unlocked: state.is_unlocked(),
-        current_path: state.current_path().map(|p| p.to_string_lossy().to_string()),
+        current_path: state
+            .current_path()
+            .map(|p| p.to_string_lossy().to_string()),
         current_account: state.current_account(),
     }
 }
@@ -115,8 +117,16 @@ pub fn generate_totp(id: i64, state: State<'_, VaultState>) -> AppResult<TotpCod
     } else {
         entry.totp_algo.as_str()
     };
-    let digits = if entry.totp_digits == 0 { 6 } else { entry.totp_digits };
-    let period = if entry.totp_period == 0 { 30 } else { entry.totp_period };
+    let digits = if entry.totp_digits == 0 {
+        6
+    } else {
+        entry.totp_digits
+    };
+    let period = if entry.totp_period == 0 {
+        30
+    } else {
+        entry.totp_period
+    };
     let code = totp::generate(&entry.totp_secret, algo, digits, period, None)?;
     let remaining = totp::remaining_seconds(period, None)?;
     Ok(TotpCode {
@@ -195,7 +205,9 @@ pub fn create_local_backup(state: State<'_, VaultState>) -> AppResult<String> {
 }
 
 #[tauri::command]
-pub fn list_local_backups(state: State<'_, VaultState>) -> AppResult<Vec<crate::vault::BackupInfo>> {
+pub fn list_local_backups(
+    state: State<'_, VaultState>,
+) -> AppResult<Vec<crate::vault::BackupInfo>> {
     state.list_local_backups()
 }
 
@@ -225,7 +237,10 @@ pub struct TagCount {
 #[tauri::command]
 pub fn collect_tag_counts(state: State<'_, VaultState>) -> AppResult<Vec<TagCount>> {
     let counts = state.collect_tag_counts()?;
-    Ok(counts.into_iter().map(|(tag, count)| TagCount { tag, count }).collect())
+    Ok(counts
+        .into_iter()
+        .map(|(tag, count)| TagCount { tag, count })
+        .collect())
 }
 
 #[tauri::command]
@@ -264,10 +279,7 @@ pub fn suggest_site(url_or_host: String) -> site_catalog::SiteSuggestion {
 // ========== 主密码管理 ==========
 
 #[tauri::command]
-pub fn verify_master_password(
-    password: String,
-    state: State<'_, VaultState>,
-) -> AppResult<bool> {
+pub fn verify_master_password(password: String, state: State<'_, VaultState>) -> AppResult<bool> {
     state.verify_master_password(&password)
 }
 

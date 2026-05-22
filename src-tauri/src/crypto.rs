@@ -138,7 +138,7 @@ fn gf128_mul(x: u128, y: u128) -> u128 {
 }
 
 fn ghash(h: &[u8; 16], data: &[u8]) -> [u8; 16] {
-    debug_assert!(data.len() % 16 == 0);
+    debug_assert!(data.len().is_multiple_of(16));
     let h_int = u128::from_be_bytes(*h);
     let mut y: u128 = 0;
     for chunk in data.chunks(16) {
@@ -352,7 +352,7 @@ fn open_v5(account: &str, password: &str, blob: &[u8]) -> AppResult<Vec<u8>> {
 
     let tag = &blob[blob.len() - V5_TAG_LEN..];
     let ciphertext = &blob[V5_HEADER_LEN..blob.len() - V5_TAG_LEN];
-    if ciphertext.is_empty() || ciphertext.len() % 16 != 0 {
+    if ciphertext.is_empty() || !ciphertext.len().is_multiple_of(16) {
         return Err(AppError::Crypto("v5 ciphertext length invalid".into()));
     }
 
@@ -431,7 +431,7 @@ mod tests {
     fn tampered_header() {
         let mut blob = seal("user", "pwd", b"hello").unwrap();
         blob[5] ^= 0x01; // 篡改 m_cost 高字节
-        // 篡改 m_cost 后参数可能仍有效但解密 tag 不匹配
+                         // 篡改 m_cost 后参数可能仍有效但解密 tag 不匹配
         let res = open("user", "pwd", &blob);
         assert!(res.is_err());
     }

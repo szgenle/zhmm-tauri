@@ -1,4 +1,5 @@
 mod accounts;
+mod anti_capture;
 mod commands;
 mod crypto;
 mod errors;
@@ -9,11 +10,10 @@ mod settings;
 mod site_catalog;
 mod totp;
 mod vault;
-mod anti_capture;
 
-use tauri::Manager;
 use accounts::RecentStore;
 use settings::SettingsState;
+use tauri::Manager;
 use vault::VaultState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -24,10 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("无法获取应用数据目录");
+            let data_dir = app.path().app_data_dir().expect("无法获取应用数据目录");
             let settings_path = data_dir.join("settings.json");
             let recent_path = data_dir.join("recent_files.json");
             app.manage(VaultState::new());

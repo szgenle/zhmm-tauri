@@ -34,7 +34,7 @@ mod imp {
             return false;
         }
         unsafe {
-            let sel = sel_registerName(b"setSharingType:\0".as_ptr() as *const c_char);
+            let sel = sel_registerName(c"setSharingType:".as_ptr() as *const c_char);
             // [ns_window setSharingType:value]
             let msg_send: unsafe extern "C" fn(*mut c_void, *const c_void, u64) =
                 std::mem::transmute(objc_msgSend as *const ());

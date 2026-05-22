@@ -32,7 +32,15 @@ const CN_HEADS: &[&str] = &[
 
 /// 核心列：导入时仅校验前 9 列
 const CORE_HEADS: &[&str] = &[
-    "ID", "类别", "账号", "密码", "手机", "邮箱", "网站", "备注", "更新时间",
+    "ID",
+    "类别",
+    "账号",
+    "密码",
+    "手机",
+    "邮箱",
+    "网站",
+    "备注",
+    "更新时间",
 ];
 
 const TAG_SEP: &str = ";";
@@ -81,7 +89,8 @@ pub fn export_xlsx(path: &Path, entries: &[PasswordEntry]) -> AppResult<()> {
             e.tags.join(TAG_SEP),
         ];
         for (col, v) in cells.iter().enumerate() {
-            ws.write_string(r, col as u16, escape(v)).map_err(xlsx_err)?;
+            ws.write_string(r, col as u16, escape(v))
+                .map_err(xlsx_err)?;
         }
     }
     wb.save(path).map_err(xlsx_err)?;
@@ -209,7 +218,11 @@ fn parse_int(cell: &Data) -> Option<i64> {
     match cell {
         Data::Int(i) => Some(*i),
         Data::Float(f) => Some(*f as i64),
-        Data::String(s) => s.trim().parse::<i64>().ok().or_else(|| s.trim().parse::<f64>().ok().map(|f| f as i64)),
+        Data::String(s) => s
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .or_else(|| s.trim().parse::<f64>().ok().map(|f| f as i64)),
         _ => None,
     }
 }
