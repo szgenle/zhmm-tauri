@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, h, nextTick, onMounted, ref } from "vue";
-import { NButton, NIcon, NTag, NSpace, useMessage, useDialog } from "naive-ui";
+import { NButton, NIcon, NTag, NSpace, NCheckbox, NPopover, useMessage, useDialog } from "naive-ui";
 import {
   AddOutline,
   CopyOutline,
   CreateOutline,
   EyeOutline,
   OpenOutline,
+  SettingsOutline,
   TimeOutline,
   TrashOutline,
 } from "@vicons/ionicons5";
@@ -258,9 +259,54 @@ async function loadData() {
   }
 }
 
+// --- 列可见性配置 ---
+
+interface ColumnConfig {
+  key: string;
+  label: string;
+  fixed?: boolean; // fixed 的列不允许隐藏
+}
+
+const allColumnConfigs: ColumnConfig[] = [
+  { key: "role", label: "分类" },
+  { key: "userID", label: "账号", fixed: true },
+  { key: "tags", label: "标签" },
+  { key: "totp", label: "2FA" },
+  { key: "utime", label: "更新时间" },
+  { key: "actions", label: "操作", fixed: true },
+];
+
+const STORAGE_KEY = "zhmm_visible_columns";
+
+function loadVisibleColumns(): string[] {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const arr = JSON.parse(stored);
+      if (Array.isArray(arr) && arr.length > 0) return arr;
+    }
+  } catch {}
+  // 默认全部显示
+  return allColumnConfigs.map((c) => c.key);
+}
+
+const visibleColumnKeys = ref<string[]>(loadVisibleColumns());
+
+function toggleColumn(key: string) {
+  const cfg = allColumnConfigs.find((c) => c.key === key);
+  if (cfg?.fixed) return;
+  const idx = visibleColumnKeys.value.indexOf(key);
+  if (idx >= 0) {
+    visibleColumnKeys.value.splice(idx, 1);
+  } else {
+    visibleColumnKeys.value.push(key);
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(visibleColumnKeys.value));
+}
+
 // --- 表格列定义 ---
 
-const columns: DataTableColumns<PasswordSummary> = [
+const allColumns: DataTableColumns<PasswordSummary> = [
   { title: "分类", key: "role", width: 80 },
   {
     title: "账号",
@@ -350,6 +396,10 @@ const columns: DataTableColumns<PasswordSummary> = [
   },
 ];
 
+const columns = computed<DataTableColumns<PasswordSummary>>(() => {
+  return allColumns.filter((col: any) => visibleColumnKeys.value.includes(col.key));
+});
+
 onMounted(loadData);
 </script>
 
@@ -371,12 +421,35 @@ onMounted(loadData);
           style="width: 280px"
         />
       </n-space>
-      <n-button type="primary" @click="openAdd">
-        <template #icon>
-          <n-icon><AddOutline /></n-icon>
-        </template>
-        添加密码
-      </n-button>
+      <n-space>
+        <n-popover trigger="click" placement="bottom-end">
+          <template #trigger>
+            <n-button quaternary>
+              <template #icon>
+                <n-icon><SettingsOutline /></n-icon>
+              </template>
+              列设置
+            </n-button>
+          </template>
+          <div style="min-width: 120px">
+            <div v-for="cfg in allColumnConfigs" :key="cfg.key" style="padding: 4px 0">
+              <n-checkbox
+                :checked="visibleColumnKeys.includes(cfg.key)"
+                :disabled="cfg.fixed"
+                @update:checked="toggleColumn(cfg.key)"
+              >
+                {{ cfg.label }}
+              </n-checkbox>
+            </div>
+          </div>
+        </n-popover>
+        <n-button type="primary" @click="openAdd">
+          <template #icon>
+            <n-icon><AddOutline /></n-icon>
+          </template>
+          添加密码
+        </n-button>
+      </n-space>
     </n-space>
 
     <!-- 空库欢迎页 -->
