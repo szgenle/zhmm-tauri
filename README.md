@@ -47,6 +47,45 @@
 
 ---
 
+## 📸 界面截图
+
+> 当前界面仅提供中文版（i18n 未来视需求再考虑）。
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/06-index.png" alt="首页 - 账号库列表" /><br/>
+      <sub><b>首页：已添加的账号库列表</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/06-create-vault-empty.png" alt="新建账号库" /><br/>
+      <sub><b>新建账号库</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/01-main-window.png" alt="主界面 - 密码列表" /><br/>
+      <sub><b>主界面：密码列表 + 标签筛选</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/02-add-password-dialog.png" alt="新增/编辑条目" /><br/>
+      <sub><b>新增 / 编辑条目（含 TOTP、强度条）</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/03-data-management.png" alt="数据管理" /><br/>
+      <sub><b>数据管理：导入导出 / 标签 / 备份</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/04-settings.png" alt="设置" /><br/>
+      <sub><b>设置：主题 / 自动锁定 / 主密码</b></sub>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## 📦 安装与运行
 
 ### 从源码运行（开发者推荐）
