@@ -202,7 +202,10 @@ async function handleCopy(row: PasswordSummary) {
 async function handleOpenUrl(row: PasswordSummary) {
   if (!row.url) return;
   try {
-    await openUrl(row.url);
+    const raw = row.url.trim();
+    // opener 插件默认仅允许 http(s)/mailto/tel 等带协议的 URL，这里为缺少协议的网址自动补上 https://
+    const normalized = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) ? raw : `https://${raw}`;
+    await openUrl(normalized);
   } catch (e: any) {
     message.error(`打开失败: ${e}`);
   }
