@@ -133,6 +133,17 @@ npm run tauri build
 
 > 💡 已有 Python 版 `zhmm` 的用户可直接「打开账号库」选择原有 `.zmb` 文件，账号名 + 主密码与原版一致即可。
 
+### 🧪 试用 Demo 数据
+
+仓库提供了一份可直接导入的示例表格：[`docs/demo_data.xlsx`](docs/demo_data.xlsx)。
+
+- **性质**：纯**虚构示例数据**，不包含任何真实账号 / 密码，可放心导入测试
+- **列格式**：13 列，与 [`src-tauri/src/io_xlsx.rs`](src-tauri/src/io_xlsx.rs) 中 `CN_HEADS` 完全一致，也与 Python 版 `zhmm` 的导出格式互通：
+  > `ID | 类别 | 账号 | 密码 | 手机 | 邮箱 | 网站 | 备注 | 更新时间 | TOTP算法 | TOTP位数 | TOTP周期 | 标签`
+- **导入路径**：主界面 →「数据管理」→「从 Excel 导入」→ 选择 `docs/demo_data.xlsx`
+
+导入后可用于体验标签筛选、TOTP 显示、密码强度条、Excel 导出、备份恢复等完整功能。
+
 ---
 
 ## 🏗 项目结构
