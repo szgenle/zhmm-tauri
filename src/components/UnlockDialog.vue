@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, nextTick } from "vue";
 import { useMessage } from "naive-ui";
 import { api, type RecentEntry } from "../api";
 
@@ -29,6 +29,9 @@ const accountInput = ref("");
 const password = ref("");
 const busy = ref(false);
 
+const accountRef = ref<InstanceType<typeof import('naive-ui')['NInput']> | null>(null);
+const passwordRef = ref<InstanceType<typeof import('naive-ui')['NInput']> | null>(null);
+
 const accountReadonly = computed(() => !!props.account);
 
 watch(
@@ -38,6 +41,14 @@ watch(
       accountInput.value = props.account ?? "";
       password.value = "";
       busy.value = false;
+      nextTick(() => {
+        // 从上到下，第一个为空且可编辑的输入框获得焦点
+        if (!accountReadonly.value && !accountInput.value) {
+          accountRef.value?.focus();
+        } else {
+          passwordRef.value?.focus();
+        }
+      });
     }
   }
 );
@@ -119,6 +130,7 @@ async function handleSubmit() {
         </n-form-item>
         <n-form-item label="账号名">
           <n-input
+            ref="accountRef"
             v-model:value="accountInput"
             :readonly="accountReadonly"
             placeholder="请输入账号名（与创建时一致）"
@@ -127,6 +139,7 @@ async function handleSubmit() {
         </n-form-item>
         <n-form-item label="主密码">
           <n-input
+            ref="passwordRef"
             v-model:value="password"
             type="password"
             show-password-on="click"

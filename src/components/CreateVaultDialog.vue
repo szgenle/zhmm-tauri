@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, nextTick } from "vue";
 import { useMessage } from "naive-ui";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { api, type RecentEntry } from "../api";
@@ -26,6 +26,11 @@ const password = ref("");
 const confirmPassword = ref("");
 const busy = ref(false);
 
+const filePathRef = ref<InstanceType<typeof import('naive-ui')['NInput']> | null>(null);
+const accountRef = ref<InstanceType<typeof import('naive-ui')['NInput']> | null>(null);
+const passwordRef = ref<InstanceType<typeof import('naive-ui')['NInput']> | null>(null);
+const confirmPasswordRef = ref<InstanceType<typeof import('naive-ui')['NInput']> | null>(null);
+
 watch(
   () => props.show,
   (v) => {
@@ -35,6 +40,18 @@ watch(
       password.value = "";
       confirmPassword.value = "";
       busy.value = false;
+      nextTick(() => {
+        // 从上到下，第一个为空的可编辑输入框获得焦点
+        if (!filePath.value) {
+          filePathRef.value?.focus();
+        } else if (!account.value) {
+          accountRef.value?.focus();
+        } else if (!password.value) {
+          passwordRef.value?.focus();
+        } else {
+          confirmPasswordRef.value?.focus();
+        }
+      });
     }
   }
 );
@@ -138,6 +155,7 @@ async function handleSubmit() {
         <n-form-item label="保存路径">
           <n-input-group>
             <n-input
+              ref="filePathRef"
               v-model:value="filePath"
               placeholder="点击右侧选择保存位置"
               :disabled="busy"
@@ -147,6 +165,7 @@ async function handleSubmit() {
         </n-form-item>
         <n-form-item label="账号名">
           <n-input
+            ref="accountRef"
             v-model:value="account"
             placeholder="账号名作为常量盐参与密钥派生，请妥善记录"
             :disabled="busy"
@@ -154,6 +173,7 @@ async function handleSubmit() {
         </n-form-item>
         <n-form-item label="主密码">
           <n-input
+            ref="passwordRef"
             v-model:value="password"
             type="password"
             show-password-on="click"
@@ -164,6 +184,7 @@ async function handleSubmit() {
         <PasswordStrengthBar :password="password" />
         <n-form-item label="确认主密码" style="margin-top: 12px">
           <n-input
+            ref="confirmPasswordRef"
             v-model:value="confirmPassword"
             type="password"
             show-password-on="click"
