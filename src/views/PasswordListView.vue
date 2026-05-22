@@ -8,8 +8,6 @@ import {
   EyeOutline,
   OpenOutline,
   SettingsOutline,
-  TimeOutline,
-  TrashOutline,
 } from "@vicons/ionicons5";
 import type { DataTableColumns } from "naive-ui";
 import {
@@ -374,7 +372,7 @@ const allColumns: DataTableColumns<PasswordSummary> = [
   {
     title: "操作",
     key: "actions",
-    width: 340,
+    width: 240,
     render(row) {
       return h(NSpace, { size: 0 }, {
         default: () => [
@@ -386,10 +384,6 @@ const allColumns: DataTableColumns<PasswordSummary> = [
             { default: () => "编辑", icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) }),
           ...(row.url ? [h(NButton, { size: "small", quaternary: true, onClick: () => handleOpenUrl(row) },
             { default: () => "打开", icon: () => h(NIcon, null, { default: () => h(OpenOutline) }) })] : []),
-          h(NButton, { size: "small", quaternary: true, onClick: () => openHistory(row) },
-            { default: () => "历史", icon: () => h(NIcon, null, { default: () => h(TimeOutline) }) }),
-          h(NButton, { size: "small", quaternary: true, type: "error", onClick: () => handleDelete(row) },
-            { default: () => "删除", icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
         ],
       });
     },
