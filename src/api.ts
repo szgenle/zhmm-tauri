@@ -1,60 +1,60 @@
 /**
  * 与 Rust 后端的所有调用封装。
+ *
+ * 多账号库改造后：路径不再固定，前端通过 createVaultAt / unlockWithPath 指定。
+ * 数据模型字段与 Python 版互通（userID / pwd / desc / utime）。
  */
 import { invoke } from "@tauri-apps/api/core";
 
 export interface VaultStatus {
-  exists: boolean;
   unlocked: boolean;
+  current_path: string | null;
+  current_account: string | null;
 }
 
 export interface PasswordHistoryItem {
   pwd: string;
-  replaced_at: string;
+  utime: number;
 }
 
 export interface PasswordSummary {
-  id: string;
-  title: string;
+  id: number;
   role: string;
-  username: string;
+  userID: string;
   phone: string;
   email: string;
   url: string;
   tags: string[];
   has_totp: boolean;
-  updated_at: string;
+  utime: number;
 }
 
 export interface PasswordEntry {
-  id: string;
-  title: string;
+  id: number;
   role: string;
-  username: string;
-  password: string;
+  userID: string;
+  pwd: string;
   phone: string;
   email: string;
   url: string;
-  notes: string;
+  desc: string;
   tags: string[];
   totp_secret: string;
   totp_algo: string;
   totp_digits: number;
   totp_period: number;
   history: PasswordHistoryItem[];
-  created_at: string;
-  updated_at: string;
+  utime: number;
 }
 
 export interface PasswordInput {
-  title: string;
   role?: string;
-  username?: string;
-  password?: string;
+  userID?: string;
+  pwd?: string;
   phone?: string;
   email?: string;
   url?: string;
-  notes?: string;
+  desc?: string;
   tags?: string[];
   totp_secret?: string;
   totp_algo?: string;
@@ -62,15 +62,22 @@ export interface PasswordInput {
   totp_period?: number;
 }
 
+export interface RecentEntry {
+  path: string;
+  account: string;
+  hashpw: string;
+  last_access_time: string;
+}
+
 export const api = {
   vaultStatus(): Promise<VaultStatus> {
     return invoke("vault_status");
   },
-  createVault(masterPassword: string): Promise<void> {
-    return invoke("create_vault", { masterPassword });
+  createVaultAt(path: string, account: string, masterPassword: string): Promise<void> {
+    return invoke("create_vault_at", { path, account, masterPassword });
   },
-  unlockVault(masterPassword: string): Promise<void> {
-    return invoke("unlock_vault", { masterPassword });
+  unlockWithPath(path: string, account: string, masterPassword: string): Promise<void> {
+    return invoke("unlock_with_path", { path, account, masterPassword });
   },
   lockVault(): Promise<void> {
     return invoke("lock_vault");
@@ -78,22 +85,22 @@ export const api = {
   listPasswords(): Promise<PasswordSummary[]> {
     return invoke("list_passwords");
   },
-  getPassword(id: string): Promise<PasswordEntry> {
+  getPassword(id: number): Promise<PasswordEntry> {
     return invoke("get_password", { id });
   },
   addPassword(input: PasswordInput): Promise<PasswordEntry> {
     return invoke("add_password", { input });
   },
-  deletePassword(id: string): Promise<void> {
+  deletePassword(id: number): Promise<void> {
     return invoke("delete_password", { id });
   },
-  updatePassword(id: string, input: PasswordInput): Promise<PasswordEntry> {
+  updatePassword(id: number, input: PasswordInput): Promise<PasswordEntry> {
     return invoke("update_password", { id, input });
   },
-  getPasswordHistory(id: string): Promise<PasswordHistoryItem[]> {
+  getPasswordHistory(id: number): Promise<PasswordHistoryItem[]> {
     return invoke("get_password_history", { id });
   },
-  generateTotp(id: string): Promise<TotpCode> {
+  generateTotp(id: number): Promise<TotpCode> {
     return invoke("generate_totp", { id });
   },
   parseOtpauth(uri: string): Promise<OtpAuthParams> {
@@ -147,7 +154,7 @@ export const api = {
     return invoke("delete_tag", { tag });
   },
   // 密码历史回滚
-  rollbackPassword(id: string, historyIndex: number): Promise<PasswordEntry> {
+  rollbackPassword(id: number, historyIndex: number): Promise<PasswordEntry> {
     return invoke("rollback_password", { id, historyIndex });
   },
   // 站点词典
@@ -171,6 +178,34 @@ export const api = {
   // xlsx 模板
   exportXlsxTemplate(path: string): Promise<void> {
     return invoke("export_xlsx_template", { path });
+  },
+  // 最近访问列表
+  listRecent(): Promise<RecentEntry[]> {
+    return invoke("list_recent");
+  },
+  upsertRecent(entry: RecentEntry): Promise<void> {
+    return invoke("upsert_recent", { entry });
+  },
+  removeRecent(path: string): Promise<void> {
+    return invoke("remove_recent", { path });
+  },
+  clearRecent(): Promise<void> {
+    return invoke("clear_recent");
+  },
+  // bcrypt（最近访问列表 UI 层快速密码预校验）
+  bcryptHash(password: string): Promise<string> {
+    return invoke("bcrypt_hash", { password });
+  },
+  bcryptVerify(password: string, hash: string): Promise<boolean> {
+    return invoke("bcrypt_verify", { password, hash });
+  },
+  // 文件存在性
+  pathExists(path: string): Promise<boolean> {
+    return invoke("path_exists", { path });
+  },
+  // 旧版 v1 vault.zhmm 不兼容检测
+  legacyVaultExists(): Promise<boolean> {
+    return invoke("legacy_vault_exists");
   },
 };
 
@@ -216,4 +251,18 @@ export interface SiteSuggestion {
   name: string;
   tags: string[];
   matched: string;
+}
+
+/**
+ * 把秒级时间戳格式化为 "YYYY-MM-DD HH:mm:ss"。
+ * 0 / 负数 / NaN 统一返回空串。
+ */
+export function formatUtime(ts: number | undefined | null): string {
+  if (!ts || ts <= 0 || !Number.isFinite(ts)) return "";
+  const d = new Date(ts * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  );
 }

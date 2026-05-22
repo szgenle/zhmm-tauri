@@ -1,15 +1,19 @@
 //! 密码库状态与文件持久化
 //!
-//! 解锁后的明文驻留内存，主密码缓存为字节，Drop 时 zeroize。
+//! 解锁后的明文驻留内存，主密码与账号缓存为字节，Drop 时 zeroize。
+//! 路径不再固定，由前端通过 set_active_path / unlock_with_path 指定。
 
 use parking_lot::RwLock;
 use std::fs;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
 
-use crate::crypto::{decrypt, encrypt, Envelope};
+use crate::crypto::{open as crypto_open, seal as crypto_seal};
 use crate::errors::{AppError, AppResult};
-use crate::models::{normalize_tags, PasswordEntry, PasswordHistoryItem, PasswordInput, VaultData, HISTORY_MAX};
+use crate::models::{
+    normalize_tags, now_ts, PasswordEntry, PasswordHistoryItem, PasswordInput, VaultData,
+    HISTORY_MAX,
+};
 
 /// 备份条目元信息（返回给前端）
 #[derive(Debug, Clone, serde::Serialize)]
@@ -23,61 +27,80 @@ const BACKUP_DIR_NAME: &str = ".backups";
 const BACKUP_EXT: &str = "zhmm";
 
 pub struct VaultState {
-    /// 密码库文件路径
-    path: RwLock<PathBuf>,
+    /// 当前活跃的密码库文件路径（未指定时为 None）
+    path: RwLock<Option<PathBuf>>,
     /// 解锁后的明文密码库
     data: RwLock<Option<VaultData>>,
-    /// 缓存主密码字节，Drop 时 zeroize
+    /// 缓存当前账号名（与 master 同生命周期）
+    account: RwLock<Option<String>>,
+    /// 缓存主密码字节
     master: RwLock<Option<Vec<u8>>>,
 }
 
 impl VaultState {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new() -> Self {
         Self {
-            path: RwLock::new(path),
+            path: RwLock::new(None),
             data: RwLock::new(None),
+            account: RwLock::new(None),
             master: RwLock::new(None),
         }
     }
 
-    #[allow(dead_code)]
-    pub fn path(&self) -> PathBuf {
+    pub fn current_path(&self) -> Option<PathBuf> {
         self.path.read().clone()
+    }
+
+    pub fn current_account(&self) -> Option<String> {
+        self.account.read().clone()
     }
 
     pub fn is_unlocked(&self) -> bool {
         self.data.read().is_some()
     }
 
-    pub fn vault_exists(&self) -> bool {
-        self.path.read().exists()
-    }
-
     /// 创建新密码库（路径不存在时）
-    pub fn create(&self, master_password: &str) -> AppResult<()> {
-        if self.vault_exists() {
-            return Err(AppError::Other("密码库已存在".into()));
+    pub fn create(&self, path: &Path, account: &str, master_password: &str) -> AppResult<()> {
+        if account.is_empty() {
+            return Err(AppError::Invalid("账号名不能为空".into()));
+        }
+        if master_password.is_empty() {
+            return Err(AppError::Invalid("主密码不能为空".into()));
+        }
+        if path.exists() {
+            return Err(AppError::Other(format!("文件已存在: {}", path.display())));
         }
         let data = VaultData::new();
         let bytes = serde_json::to_vec(&data)?;
-        let env = encrypt(&bytes, master_password.as_bytes())?;
-        self.write_envelope(&env)?;
+        let blob = crypto_seal(account, master_password, &bytes)?;
+        Self::atomic_write(path, &blob)?;
 
+        *self.path.write() = Some(path.to_path_buf());
         *self.data.write() = Some(data);
+        *self.account.write() = Some(account.to_string());
         *self.master.write() = Some(master_password.as_bytes().to_vec());
         Ok(())
     }
 
-    /// 解锁现有密码库
-    pub fn unlock(&self, master_password: &str) -> AppResult<()> {
-        let bytes = fs::read(&*self.path.read())?;
-        let env = Envelope::from_bytes(&bytes)?;
-        let plain = decrypt(&env, master_password.as_bytes())?;
+    /// 用 (account, password) 打开指定路径的密码库并解锁
+    pub fn unlock_with_path(
+        &self,
+        path: &Path,
+        account: &str,
+        master_password: &str,
+    ) -> AppResult<()> {
+        if !path.exists() {
+            return Err(AppError::Other(format!("文件不存在: {}", path.display())));
+        }
+        let bytes = fs::read(path)?;
+        let plain = crypto_open(account, master_password, &bytes)?;
         let mut data: VaultData = serde_json::from_slice(&plain)
             .map_err(|e| AppError::Crypto(format!("vault json: {e}")))?;
         data.upgrade();
 
+        *self.path.write() = Some(path.to_path_buf());
         *self.data.write() = Some(data);
+        *self.account.write() = Some(account.to_string());
         *self.master.write() = Some(master_password.as_bytes().to_vec());
         Ok(())
     }
@@ -86,8 +109,8 @@ impl VaultState {
     pub fn lock(&self) {
         if let Some(mut data) = self.data.write().take() {
             for e in &mut data.entries {
-                e.password.zeroize();
-                e.notes.zeroize();
+                e.pwd.zeroize();
+                e.desc.zeroize();
                 e.totp_secret.zeroize();
                 for h in &mut e.history {
                     h.pwd.zeroize();
@@ -97,6 +120,10 @@ impl VaultState {
         if let Some(mut m) = self.master.write().take() {
             m.zeroize();
         }
+        if let Some(mut a) = self.account.write().take() {
+            a.zeroize();
+        }
+        // path 保持不变，下次解锁同一文件时仍可用；如需清空可调 clear_path
     }
 
     /// 列出所有条目（轻量视图）
@@ -114,7 +141,7 @@ impl VaultState {
     }
 
     /// 取完整条目
-    pub fn get(&self, id: &str) -> AppResult<PasswordEntry> {
+    pub fn get(&self, id: i64) -> AppResult<PasswordEntry> {
         let guard = self.data.read();
         let data = guard.as_ref().ok_or(AppError::Locked)?;
         data.entries
@@ -126,16 +153,16 @@ impl VaultState {
 
     /// 添加条目，返回入库后的完整条目
     pub fn add(&self, mut input: PasswordInput) -> AppResult<PasswordEntry> {
-        let mut entry = PasswordEntry::new(std::mem::take(&mut input.title));
+        let mut entry = PasswordEntry::new();
         if !input.role.is_empty() {
             entry.role = std::mem::take(&mut input.role);
         }
-        entry.username = std::mem::take(&mut input.username);
-        entry.password = std::mem::take(&mut input.password);
+        entry.user_id = std::mem::take(&mut input.user_id);
+        entry.pwd = std::mem::take(&mut input.pwd);
         entry.phone = std::mem::take(&mut input.phone);
         entry.email = std::mem::take(&mut input.email);
         entry.url = std::mem::take(&mut input.url);
-        entry.notes = std::mem::take(&mut input.notes);
+        entry.desc = std::mem::take(&mut input.desc);
         entry.tags = normalize_tags(&std::mem::take(&mut input.tags));
         entry.totp_secret = std::mem::take(&mut input.totp_secret);
         entry.totp_algo = std::mem::take(&mut input.totp_algo);
@@ -145,18 +172,21 @@ impl VaultState {
         {
             let mut guard = self.data.write();
             let data = guard.as_mut().ok_or(AppError::Locked)?;
+            entry.id = data.next_id();
+            entry.utime = now_ts();
             // 同步登记 role
             if !entry.role.is_empty() && !data.roles.iter().any(|r| r == &entry.role) {
                 data.roles.push(entry.role.clone());
             }
             data.entries.push(entry.clone());
+            data.utime = now_ts();
         }
-        self.persist_with_cached_master()?;
+        self.persist_with_cached()?;
         Ok(entry)
     }
 
-    /// 更新条目；若 password 变动，旧密码压入 history
-    pub fn update(&self, id: &str, mut input: PasswordInput) -> AppResult<PasswordEntry> {
+    /// 更新条目；若 pwd 变动，旧密码压入 history
+    pub fn update(&self, id: i64, mut input: PasswordInput) -> AppResult<PasswordEntry> {
         let updated;
         {
             let mut guard = self.data.write();
@@ -168,48 +198,46 @@ impl VaultState {
                 .ok_or(AppError::NotFound)?;
 
             // 检测密码变化 -> 旧密码压入历史
-            let new_pwd = std::mem::take(&mut input.password);
-            if !entry.password.is_empty() && new_pwd != entry.password {
-                let old = std::mem::take(&mut entry.password);
+            let new_pwd = std::mem::take(&mut input.pwd);
+            if !entry.pwd.is_empty() && new_pwd != entry.pwd {
+                let old = std::mem::take(&mut entry.pwd);
                 entry.history.insert(0, PasswordHistoryItem::new(old));
                 if entry.history.len() > HISTORY_MAX {
-                    // 叠后尾位都 zeroize 一下
                     for h in entry.history.drain(HISTORY_MAX..) {
                         let mut p = h.pwd;
                         zeroize::Zeroize::zeroize(&mut p);
                     }
                 }
             }
-            entry.password = new_pwd;
+            entry.pwd = new_pwd;
 
-            entry.title = std::mem::take(&mut input.title);
             if !input.role.is_empty() {
                 entry.role = std::mem::take(&mut input.role);
             }
-            entry.username = std::mem::take(&mut input.username);
+            entry.user_id = std::mem::take(&mut input.user_id);
             entry.phone = std::mem::take(&mut input.phone);
             entry.email = std::mem::take(&mut input.email);
             entry.url = std::mem::take(&mut input.url);
-            entry.notes = std::mem::take(&mut input.notes);
+            entry.desc = std::mem::take(&mut input.desc);
             entry.tags = normalize_tags(&std::mem::take(&mut input.tags));
             entry.totp_secret = std::mem::take(&mut input.totp_secret);
             entry.totp_algo = std::mem::take(&mut input.totp_algo);
             entry.totp_digits = input.totp_digits;
             entry.totp_period = input.totp_period;
-            entry.updated_at = chrono::Utc::now();
+            entry.utime = now_ts();
 
-            // 同步登记 role
             if !entry.role.is_empty() && !data.roles.iter().any(|r| r == &entry.role) {
                 data.roles.push(entry.role.clone());
             }
             updated = entry.clone();
+            data.utime = now_ts();
         }
-        self.persist_with_cached_master()?;
+        self.persist_with_cached()?;
         Ok(updated)
     }
 
     /// 取历史密码列表
-    pub fn history(&self, id: &str) -> AppResult<Vec<PasswordHistoryItem>> {
+    pub fn history(&self, id: i64) -> AppResult<Vec<PasswordHistoryItem>> {
         let guard = self.data.read();
         let data = guard.as_ref().ok_or(AppError::Locked)?;
         let entry = data
@@ -221,7 +249,7 @@ impl VaultState {
     }
 
     /// 删除条目
-    pub fn remove(&self, id: &str) -> AppResult<()> {
+    pub fn remove(&self, id: i64) -> AppResult<()> {
         {
             let mut guard = self.data.write();
             let data = guard.as_mut().ok_or(AppError::Locked)?;
@@ -230,8 +258,9 @@ impl VaultState {
             if data.entries.len() == before {
                 return Err(AppError::NotFound);
             }
+            data.utime = now_ts();
         }
-        self.persist_with_cached_master()
+        self.persist_with_cached()
     }
 
     /// 快照当前 VaultData（加密备份用）
@@ -244,12 +273,12 @@ impl VaultState {
     /// 以给定 VaultData 完全替换当前（恢复备份用）
     pub fn replace(&self, mut data: VaultData) -> AppResult<()> {
         data.upgrade();
-        // 重生成 id 这里不做——备份本身保留 id
+        data.utime = now_ts();
         {
             let mut guard = self.data.write();
             *guard = Some(data);
         }
-        self.persist_with_cached_master()
+        self.persist_with_cached()
     }
 
     /// 追加一批条目（导入 xlsx 用，id 重生成避免冲突）
@@ -259,24 +288,25 @@ impl VaultState {
             let mut guard = self.data.write();
             let data = guard.as_mut().ok_or(AppError::Locked)?;
             for e in entries.iter_mut() {
-                // 重生 UUID、保证唯一
-                e.id = uuid::Uuid::new_v4().to_string();
+                // 重新分配 id 保证唯一
+                e.id = data.next_id();
+                e.utime = now_ts();
                 if e.role.is_empty() {
                     e.role = crate::models::DEFAULT_ROLE.to_string();
                 }
                 if !data.roles.iter().any(|r| r == &e.role) {
                     data.roles.push(e.role.clone());
                 }
+                data.entries.push(e.clone());
             }
-            data.entries.extend(entries);
+            data.utime = now_ts();
         }
-        self.persist_with_cached_master()?;
+        self.persist_with_cached()?;
         Ok(count)
     }
 
     // ========== 标签管理 ==========
 
-    /// 统计所有标签使用次数
     pub fn collect_tag_counts(&self) -> AppResult<Vec<(String, usize)>> {
         let guard = self.data.read();
         let data = guard.as_ref().ok_or(AppError::Locked)?;
@@ -289,12 +319,10 @@ impl VaultState {
             }
         }
         let mut result: Vec<(String, usize)> = counts.into_iter().collect();
-        // 按使用次数降序，同次数按字母升序
         result.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         Ok(result)
     }
 
-    /// 重命名标签（含合并去重）
     pub fn rename_tag(&self, old: &str, new: &str) -> AppResult<usize> {
         let old_n = old.trim();
         let new_n = new.trim();
@@ -307,24 +335,32 @@ impl VaultState {
             let data = guard.as_mut().ok_or(AppError::Locked)?;
             for entry in &mut data.entries {
                 if entry.tags.contains(&old_n.to_string()) {
-                    // 替换 old -> new
-                    entry.tags = entry.tags.iter()
-                        .map(|t| if t == old_n { new_n.to_string() } else { t.clone() })
+                    entry.tags = entry
+                        .tags
+                        .iter()
+                        .map(|t| {
+                            if t == old_n {
+                                new_n.to_string()
+                            } else {
+                                t.clone()
+                            }
+                        })
                         .collect();
-                    // 去重
                     entry.tags = normalize_tags(&entry.tags);
-                    entry.updated_at = chrono::Utc::now();
+                    entry.utime = now_ts();
                     affected += 1;
                 }
             }
+            if affected > 0 {
+                data.utime = now_ts();
+            }
         }
         if affected > 0 {
-            self.persist_with_cached_master()?;
+            self.persist_with_cached()?;
         }
         Ok(affected)
     }
 
-    /// 删除标签
     pub fn delete_tag(&self, tag: &str) -> AppResult<usize> {
         let target = tag.trim();
         if target.is_empty() {
@@ -337,21 +373,23 @@ impl VaultState {
             for entry in &mut data.entries {
                 if entry.tags.contains(&target.to_string()) {
                     entry.tags.retain(|t| t != target);
-                    entry.updated_at = chrono::Utc::now();
+                    entry.utime = now_ts();
                     affected += 1;
                 }
             }
+            if affected > 0 {
+                data.utime = now_ts();
+            }
         }
         if affected > 0 {
-            self.persist_with_cached_master()?;
+            self.persist_with_cached()?;
         }
         Ok(affected)
     }
 
     // ========== 密码历史回滚 ==========
 
-    /// 将历史密码恢复为当前密码；当前密码压入历史栈顶
-    pub fn rollback_password(&self, id: &str, history_index: usize) -> AppResult<PasswordEntry> {
+    pub fn rollback_password(&self, id: i64, history_index: usize) -> AppResult<PasswordEntry> {
         let updated;
         {
             let mut guard = self.data.write();
@@ -365,57 +403,65 @@ impl VaultState {
                 return Err(AppError::Invalid("历史索引超出范围".into()));
             }
             let target = entry.history.remove(history_index);
-            let current_pwd = std::mem::take(&mut entry.password);
-            // 当前密码非空则压入栈顶
+            let current_pwd = std::mem::take(&mut entry.pwd);
             if !current_pwd.is_empty() {
-                entry.history.insert(0, PasswordHistoryItem::new(current_pwd));
+                entry
+                    .history
+                    .insert(0, PasswordHistoryItem::new(current_pwd));
             }
-            // 超出上限截断
             if entry.history.len() > HISTORY_MAX {
                 for h in entry.history.drain(HISTORY_MAX..) {
                     let mut p = h.pwd;
                     zeroize::Zeroize::zeroize(&mut p);
                 }
             }
-            entry.password = target.pwd;
-            entry.updated_at = chrono::Utc::now();
+            entry.pwd = target.pwd;
+            entry.utime = now_ts();
             updated = entry.clone();
+            data.utime = now_ts();
         }
-        self.persist_with_cached_master()?;
+        self.persist_with_cached()?;
         Ok(updated)
     }
 
     // ========== 本地备份管理 ==========
 
-    /// 获取备份目录路径（与 vault 文件同级）
-    fn backup_dir(&self) -> PathBuf {
-        let vault_path = self.path.read().clone();
-        vault_path
+    fn backup_dir(&self) -> AppResult<PathBuf> {
+        let path = self
+            .path
+            .read()
+            .clone()
+            .ok_or_else(|| AppError::Other("未指定密码库路径".into()))?;
+        Ok(path
             .parent()
             .unwrap_or(Path::new("."))
-            .join(BACKUP_DIR_NAME)
+            .join(BACKUP_DIR_NAME))
     }
 
-    /// 创建一份本地备份（使用缓存的主密码加密）
     pub fn create_local_backup(&self) -> AppResult<String> {
+        let account = self.account.read().clone().ok_or(AppError::Locked)?;
         let master = self.master.read().clone().ok_or(AppError::Locked)?;
+        let master_str = std::str::from_utf8(&master)
+            .map_err(|e| AppError::Crypto(format!("master utf8: {e}")))?;
         let data = self.snapshot()?;
         let bytes = serde_json::to_vec(&data)?;
-        let env = encrypt(&bytes, &master)?;
+        let blob = crypto_seal(&account, master_str, &bytes)?;
 
-        let dir = self.backup_dir();
+        let dir = self.backup_dir()?;
         fs::create_dir_all(&dir)?;
 
         let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let name = format!("backup_{ts}.{BACKUP_EXT}");
         let path = dir.join(&name);
-        fs::write(&path, env.to_bytes())?;
+        fs::write(&path, blob)?;
         Ok(name)
     }
 
-    /// 列出所有本地备份（按时间倒序）
     pub fn list_local_backups(&self) -> AppResult<Vec<BackupInfo>> {
-        let dir = self.backup_dir();
+        let dir = match self.backup_dir() {
+            Ok(d) => d,
+            Err(_) => return Ok(Vec::new()),
+        };
         if !dir.exists() {
             return Ok(Vec::new());
         }
@@ -446,14 +492,12 @@ impl VaultState {
                 created_at,
             });
         }
-        // 按名称倒序（名称含时间戳，倒序即最新在前）
         items.sort_by(|a, b| b.name.cmp(&a.name));
         Ok(items)
     }
 
-    /// 删除指定本地备份
     pub fn delete_local_backup(&self, name: &str) -> AppResult<()> {
-        let path = self.backup_dir().join(name);
+        let path = self.backup_dir()?.join(name);
         if !path.exists() {
             return Err(AppError::NotFound);
         }
@@ -461,16 +505,17 @@ impl VaultState {
         Ok(())
     }
 
-    /// 从本地备份恢复（使用缓存主密码解密）
     pub fn restore_local_backup(&self, name: &str) -> AppResult<()> {
+        let account = self.account.read().clone().ok_or(AppError::Locked)?;
         let master = self.master.read().clone().ok_or(AppError::Locked)?;
-        let path = self.backup_dir().join(name);
+        let master_str = std::str::from_utf8(&master)
+            .map_err(|e| AppError::Crypto(format!("master utf8: {e}")))?;
+        let path = self.backup_dir()?.join(name);
         if !path.exists() {
             return Err(AppError::Other(format!("备份不存在: {name}")));
         }
         let bytes = fs::read(&path)?;
-        let env = Envelope::from_bytes(&bytes)?;
-        let plain = decrypt(&env, &master)?;
+        let plain = crypto_open(&account, master_str, &bytes)?;
         let mut data: VaultData = serde_json::from_slice(&plain)
             .map_err(|e| AppError::Crypto(format!("备份 json: {e}")))?;
         data.upgrade();
@@ -478,18 +523,18 @@ impl VaultState {
             let mut guard = self.data.write();
             *guard = Some(data);
         }
-        self.persist_with_cached_master()
+        self.persist_with_cached()
     }
 
-    /// 清理备份：保留最新 keep 个，删除多余的，返回删除数量
     pub fn cleanup_backups(&self, keep: usize) -> AppResult<u32> {
         let items = self.list_local_backups()?;
         if items.len() <= keep {
             return Ok(0);
         }
+        let dir = self.backup_dir()?;
         let mut removed = 0u32;
         for item in items.iter().skip(keep) {
-            let path = self.backup_dir().join(&item.name);
+            let path = dir.join(&item.name);
             if fs::remove_file(&path).is_ok() {
                 removed += 1;
             }
@@ -499,19 +544,25 @@ impl VaultState {
 
     // ========== 主密码管理 ==========
 
-    /// 校验主密码：尝试用给定密码解密当前密码库文件，成功即正确
+    /// 校验主密码：尝试用给定密码解密当前文件，成功即正确
     pub fn verify_master_password(&self, password: &str) -> AppResult<bool> {
-        let bytes = fs::read(&*self.path.read())?;
-        let env = Envelope::from_bytes(&bytes)?;
-        match decrypt(&env, password.as_bytes()) {
+        let account = self.account.read().clone().ok_or(AppError::Locked)?;
+        let path = self
+            .path
+            .read()
+            .clone()
+            .ok_or_else(|| AppError::Other("未指定密码库路径".into()))?;
+        let bytes = fs::read(&path)?;
+        match crypto_open(&account, password, &bytes) {
             Ok(_) => Ok(true),
-            Err(AppError::Crypto(_)) | Err(AppError::IntegrityCheck) | Err(AppError::InvalidPassword) => Ok(false),
+            Err(AppError::InvalidPassword)
+            | Err(AppError::Crypto(_))
+            | Err(AppError::IntegrityCheck) => Ok(false),
             Err(e) => Err(e),
         }
     }
 
-    /// 更换主密码：先用旧密码校验 → 创建保险备份 → 用新密码重新加密落盘
-    /// 返回保险备份的文件名（位于 `.backups/` 目录下）
+    /// 更换主密码：必须已解锁，先用旧密码核对缓存 → 创建保险备份 → 用新密码重写
     pub fn rekey(&self, old_password: &str, new_password: &str) -> AppResult<String> {
         if new_password.is_empty() {
             return Err(AppError::Invalid("新主密码不能为空".into()));
@@ -519,25 +570,30 @@ impl VaultState {
         if new_password == old_password {
             return Err(AppError::Invalid("新主密码不能与旧主密码相同".into()));
         }
-        // 必须已解锁（缓存的 master 用于一致性比对）
         let cached = self.master.read().clone().ok_or(AppError::Locked)?;
         if cached.as_slice() != old_password.as_bytes() {
             return Err(AppError::InvalidPassword);
         }
+        let account = self.account.read().clone().ok_or(AppError::Locked)?;
+        let path = self
+            .path
+            .read()
+            .clone()
+            .ok_or_else(|| AppError::Other("未指定密码库路径".into()))?;
 
-        // 1) 创建保险备份（文件名前缀 rekey_，使用旧密码加密的当前数据）
+        // 1) 保险备份（旧密码加密）
         let backup_name = self.create_rekey_backup()?;
 
-        // 2) 用新密码重新加密当前明文数据并原子落盘
+        // 2) 用新密码重新加密当前数据并原子落盘
         let bytes = {
             let guard = self.data.read();
             let data = guard.as_ref().ok_or(AppError::Locked)?;
             serde_json::to_vec(data)?
         };
-        let new_env = encrypt(&bytes, new_password.as_bytes())?;
-        self.write_envelope(&new_env)?;
+        let new_blob = crypto_seal(&account, new_password, &bytes)?;
+        Self::atomic_write(&path, &new_blob)?;
 
-        // 3) 更新缓存的主密码（旧密码 zeroize）
+        // 3) 更新缓存的主密码
         {
             let mut master_guard = self.master.write();
             if let Some(mut old) = master_guard.take() {
@@ -548,44 +604,60 @@ impl VaultState {
         Ok(backup_name)
     }
 
-    /// 创建 rekey 保险备份：使用当前缓存的（旧）主密码加密当前数据
     fn create_rekey_backup(&self) -> AppResult<String> {
+        let account = self.account.read().clone().ok_or(AppError::Locked)?;
         let master = self.master.read().clone().ok_or(AppError::Locked)?;
+        let master_str = std::str::from_utf8(&master)
+            .map_err(|e| AppError::Crypto(format!("master utf8: {e}")))?;
         let data = self.snapshot()?;
         let bytes = serde_json::to_vec(&data)?;
-        let env = encrypt(&bytes, &master)?;
+        let blob = crypto_seal(&account, master_str, &bytes)?;
 
-        let dir = self.backup_dir();
+        let dir = self.backup_dir()?;
         fs::create_dir_all(&dir)?;
 
         let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let name = format!("rekey_{ts}.{BACKUP_EXT}");
         let path = dir.join(&name);
-        fs::write(&path, env.to_bytes())?;
+        fs::write(&path, blob)?;
         Ok(name)
     }
 
     // ========== 内部方法 ==========
 
-    fn write_envelope(&self, env: &Envelope) -> AppResult<()> {
-        let path = self.path.read().clone();
+    fn atomic_write(path: &Path, bytes: &[u8]) -> AppResult<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&path, env.to_bytes())?;
+        // 简单写入即可（Tauri 单进程；后续如需要原子可换 NamedTempFile + rename）
+        fs::write(path, bytes)?;
         Ok(())
     }
 
-    fn persist_with_cached_master(&self) -> AppResult<()> {
+    fn persist_with_cached(&self) -> AppResult<()> {
+        let account = self.account.read().clone().ok_or(AppError::Locked)?;
         let master = self.master.read().clone().ok_or(AppError::Locked)?;
+        let master_str = std::str::from_utf8(&master)
+            .map_err(|e| AppError::Crypto(format!("master utf8: {e}")))?;
+        let path = self
+            .path
+            .read()
+            .clone()
+            .ok_or_else(|| AppError::Other("未指定密码库路径".into()))?;
         let bytes = {
             let guard = self.data.read();
             let data = guard.as_ref().ok_or(AppError::Locked)?;
             serde_json::to_vec(data)?
         };
-        let env = encrypt(&bytes, &master)?;
-        self.write_envelope(&env)?;
+        let blob = crypto_seal(&account, master_str, &bytes)?;
+        Self::atomic_write(&path, &blob)?;
         Ok(())
+    }
+}
+
+impl Default for VaultState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

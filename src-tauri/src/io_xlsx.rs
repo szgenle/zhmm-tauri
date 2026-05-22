@@ -66,15 +66,15 @@ pub fn export_xlsx(path: &Path, entries: &[PasswordEntry]) -> AppResult<()> {
     for (idx, e) in entries.iter().enumerate() {
         let r = (idx + 1) as u32;
         let cells: [String; 13] = [
-            e.id.clone(),
+            e.id.to_string(),
             e.role.clone(),
-            e.username.clone(),
-            e.password.clone(),
+            e.user_id.clone(),
+            e.pwd.clone(),
             e.phone.clone(),
             e.email.clone(),
             e.url.clone(),
-            e.notes.clone(),
-            e.updated_at.to_rfc3339(),
+            e.desc.clone(),
+            e.utime.to_string(),
             e.totp_algo.clone(),
             e.totp_digits.to_string(),
             e.totp_period.to_string(),
@@ -122,24 +122,26 @@ pub fn import_xlsx(path: &Path) -> AppResult<Vec<PasswordEntry>> {
         if all_empty {
             continue;
         }
-        let mut e = PasswordEntry::new(""); // 暂用空 title，后面填
+        let mut e = PasswordEntry::new();
+        // ID 列若可解析为 i64 则使用，否则保留 new() 的默认时间戳 id；后续 extend_entries 会重新分配
+        if let Some(i) = idx_of("ID") {
+            if let Some(parsed) = parse_int(&row[i]) {
+                e.id = parsed;
+            }
+        }
         e.role = read_str(row, idx_of("类别"));
-        e.username = read_str(row, idx_of("账号"));
-        e.password = read_str(row, idx_of("密码"));
+        e.user_id = read_str(row, idx_of("账号"));
+        e.pwd = read_str(row, idx_of("密码"));
         // 手机号若被读成 float，去掉小数尾
         e.phone = read_phone(row, idx_of("手机"));
         e.email = read_str(row, idx_of("邮箱"));
         e.url = read_str(row, idx_of("网站"));
-        e.notes = read_str(row, idx_of("备注"));
+        e.desc = read_str(row, idx_of("备注"));
 
-        // title 不在 CN_HEADS 里（Python 版没有 title 列），使用账号或网站推一个
-        e.title = if !e.username.is_empty() {
-            e.username.clone()
-        } else if !e.url.is_empty() {
-            e.url.clone()
-        } else {
-            "导入条目".into()
-        };
+        // 更新时间：尝试解析为秒级时间戳；解析失败保留默认 0
+        if let Some(i) = idx_of("更新时间") {
+            e.utime = parse_int(&row[i]).unwrap_or(0);
+        }
 
         // 可选 TOTP 列（注意：secret 不在表里，无法导入）
         if let Some(i) = idx_of("TOTP算法") {

@@ -13,6 +13,7 @@ import {
 import type { DataTableColumns } from "naive-ui";
 import {
   api,
+  formatUtime,
   type PasswordEntry,
   type PasswordSummary,
 } from "../api";
@@ -44,6 +45,13 @@ function normalize(s: string): string {
   return (s || "").trim().normalize("NFKC").toLowerCase();
 }
 
+/** 列表展示用的名称：账号 → 网址 → #id */
+function displayName(row: PasswordSummary): string {
+  if (row.userID) return row.userID;
+  if (row.url) return row.url;
+  return `#${row.id}`;
+}
+
 const filtered = computed<PasswordSummary[]>(() => {
   let result = data.value;
   if (selectedTags.value.length > 0) {
@@ -55,7 +63,7 @@ const filtered = computed<PasswordSummary[]>(() => {
   if (!q) return result;
   return result.filter((row) => {
     const fields = [
-      row.title, row.role, row.username, row.phone, row.email, row.url,
+      row.role, row.userID, row.phone, row.email, row.url,
       ...(row.tags || []),
     ];
     return fields.some((f) => normalize(String(f || "")).includes(q));
@@ -69,7 +77,7 @@ const editEntry = ref<PasswordEntry | null>(null);
 // 历史对话框
 const showHistoryDialog = ref(false);
 const historyTitle = ref("");
-const historyEntryId = ref("");
+const historyEntryId = ref<number>(0);
 
 // 右键菜单
 const showContextMenu = ref(false);
@@ -81,7 +89,7 @@ const contextMenuOptions = computed(() => {
   const row = contextRow.value;
   if (!row) return [] as Array<{ label: string; key: string; disabled?: boolean; type?: string }>;
   const opts: Array<{ label?: string; key: string; disabled?: boolean; type?: string }> = [];
-  opts.push({ label: "复制账号", key: "copy-user", disabled: !row.username });
+  opts.push({ label: "复制账号", key: "copy-user", disabled: !row.userID });
   opts.push({ label: "复制密码", key: "copy" });
   if (row.has_totp) opts.push({ label: "复制动态码", key: "copy-totp" });
   if (row.url) opts.push({ label: "复制网址", key: "copy-url" });
@@ -132,9 +140,9 @@ function rowProps(row: PasswordSummary) {
 // --- 操作处理 ---
 
 async function handleCopyUsername(row: PasswordSummary) {
-  if (!row.username) return;
+  if (!row.userID) return;
   try {
-    await writeText(row.username);
+    await writeText(row.userID);
     message.success("账号已复制到剪贴板");
   } catch (e: any) {
     message.error(`复制失败: ${e}`);
@@ -165,7 +173,7 @@ async function handleCopyTotp(row: PasswordSummary) {
 async function handleCopy(row: PasswordSummary) {
   try {
     const entry = await api.getPassword(row.id);
-    await copyAndScheduleClear(entry.password);
+    await copyAndScheduleClear(entry.pwd);
     message.success("密码已复制到剪贴板");
   } catch (e: any) {
     message.error(`复制失败: ${e}`);
@@ -184,7 +192,7 @@ async function handleOpenUrl(row: PasswordSummary) {
 function handleDelete(row: PasswordSummary) {
   dialog.warning({
     title: "确认删除",
-    content: `确定要删除"${row.title}"吗？此操作不可恢复。`,
+    content: `确定要删除"${displayName(row)}"吗？此操作不可恢复。`,
     positiveText: "删除",
     negativeText: "取消",
     onPositiveClick: async () => {
@@ -214,7 +222,7 @@ async function openEdit(row: PasswordSummary) {
 }
 
 function openHistory(row: PasswordSummary) {
-  historyTitle.value = row.title;
+  historyTitle.value = displayName(row);
   historyEntryId.value = row.id;
   showHistoryDialog.value = true;
 }
@@ -233,43 +241,36 @@ async function loadData() {
 // --- 表格列定义 ---
 
 const columns: DataTableColumns<PasswordSummary> = [
-  {
-    title: "名称",
-    key: "title",
-    width: 180,
-    render(row) {
-      const pwd = revealedPasswords.value.get(row.id);
-      if (pwd) {
-        return h('div', {}, [
-          h('div', {}, row.title),
-          h('div', { style: 'font-family: monospace; font-size: 12px; color: var(--n-text-color-2); margin-top: 2px' }, pwd),
-        ]);
-      }
-      return row.title;
-    },
-  },
   { title: "分类", key: "role", width: 80 },
   {
-    title: "用户名",
-    key: "username",
-    width: 160,
+    title: "账号",
+    key: "userID",
+    width: 200,
     render(row) {
-      if (!row.username) return "";
-      return h(
+      const pwd = revealedPasswords.value.get(row.id);
+      const name = displayName(row);
+      const nameNode = h(
         'span',
         {
           class: 'username-copy',
-          title: '点击复制用户名',
+          title: '点击复制账号',
           onClick: (e: MouseEvent) => {
             e.stopPropagation();
             handleCopyUsername(row);
           },
         },
         [
-          h('span', { class: 'username-text' }, row.username),
+          h('span', { class: 'username-text' }, name),
           h(NIcon, { size: 14, class: 'username-copy-icon' }, { default: () => h(CopyOutline) }),
         ]
       );
+      if (pwd) {
+        return h('div', {}, [
+          nameNode,
+          h('div', { style: 'font-family: monospace; font-size: 12px; color: var(--n-text-color-2); margin-top: 2px' }, pwd),
+        ]);
+      }
+      return nameNode;
     },
   },
   {
@@ -300,9 +301,9 @@ const columns: DataTableColumns<PasswordSummary> = [
   },
   {
     title: "更新时间",
-    key: "updated_at",
+    key: "utime",
     width: 170,
-    render: (row) => new Date(row.updated_at).toLocaleString(),
+    render: (row) => formatUtime(row.utime),
   },
   {
     title: "操作",

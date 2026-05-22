@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { useMessage, useDialog } from "naive-ui";
-import { api, type PasswordHistoryItem } from "../api";
+import { api, formatUtime, type PasswordHistoryItem } from "../api";
 import { copyAndScheduleClear } from "../settings";
 
 const props = defineProps<{
   show: boolean;
   title: string;
-  entryId: string;
+  entryId: number;
 }>();
 
 const emit = defineEmits<{
@@ -90,7 +90,7 @@ function rollbackHistory(idx: number) {
               {{ historyRevealed.has(idx) ? item.pwd : '••••••••' }}
             </div>
             <div style="font-size: 12px; color: var(--n-text-color-3)">
-              替换于 {{ new Date(item.replaced_at).toLocaleString() }}
+              替换于 {{ formatUtime(item.utime) }}
             </div>
           </div>
           <n-space :size="4">

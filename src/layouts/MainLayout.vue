@@ -24,7 +24,7 @@ const tabValue = computed<string>({
 async function handleLock() {
   try {
     await api.lockVault();
-    router.push("/login");
+    router.push("/files");
   } catch (e: any) {
     message.error(`锁定失败: ${e}`);
   }
@@ -39,7 +39,7 @@ function resetIdle() {
   idleTimer = window.setTimeout(async () => {
     try {
       await api.lockVault();
-      router.push("/login");
+      router.push("/files");
     } catch {
       // 已锁定或路由切换下静默
     }

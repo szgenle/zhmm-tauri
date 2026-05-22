@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, ref, watch } from "vue";
 import { api } from "../api";
 import { copyAndScheduleClear } from "../settings";
 
-const props = defineProps<{ id: string }>();
+const props = defineProps<{ id: number }>();
 
 const code = ref("------");
 const remaining = ref(0);

@@ -25,14 +25,13 @@ const message = useMessage();
 
 const editing = ref(false);
 const form = reactive<Required<PasswordInput>>({
-  title: "",
   role: "个人",
-  username: "",
-  password: "",
+  userID: "",
+  pwd: "",
   phone: "",
   email: "",
   url: "",
-  notes: "",
+  desc: "",
   tags: [] as string[],
   totp_secret: "",
   totp_algo: "",
@@ -48,7 +47,7 @@ const otpauthUri = ref("");
 const showRandomPwdDialog = ref(false);
 
 function onRandomPwdConfirm(pwd: string) {
-  form.password = pwd;
+  form.pwd = pwd;
   showRandomPwdDialog.value = false;
 }
 
@@ -75,14 +74,13 @@ watch(
     if (!visible) return;
     if (props.editEntry) {
       const e = props.editEntry;
-      form.title = e.title;
       form.role = e.role || "个人";
-      form.username = e.username;
-      form.password = e.password;
+      form.userID = e.userID;
+      form.pwd = e.pwd;
       form.phone = e.phone;
       form.email = e.email;
       form.url = e.url;
-      form.notes = e.notes;
+      form.desc = e.desc;
       form.tags = [...e.tags];
       form.totp_secret = e.totp_secret;
       form.totp_algo = e.totp_algo;
@@ -125,9 +123,6 @@ watch(
               existing.add(t);
             }
           }
-          if (!form.title.trim() && suggestion.name) {
-            form.title = suggestion.name;
-          }
         }
       } catch {
         // 静默忽略建议失败
@@ -137,14 +132,13 @@ watch(
 );
 
 function resetForm() {
-  form.title = "";
   form.role = "个人";
-  form.username = "";
-  form.password = "";
+  form.userID = "";
+  form.pwd = "";
   form.phone = "";
   form.email = "";
   form.url = "";
-  form.notes = "";
+  form.desc = "";
   form.tags = [];
   form.totp_secret = "";
   form.totp_algo = "";
@@ -155,8 +149,8 @@ function resetForm() {
 }
 
 async function handleSave() {
-  if (!form.title?.trim()) {
-    message.error("名称不能为空");
+  if (!form.userID?.trim() && !form.url?.trim()) {
+    message.error("请至少填写账号或网址");
     return;
   }
   editing.value = true;
@@ -190,7 +184,9 @@ async function importOtpauth() {
     form.totp_digits = p.digits;
     form.totp_period = p.period;
     totpEnabled.value = true;
-    if (!form.title) form.title = p.issuer || p.label || form.title;
+    if (!form.userID && (p.label || p.issuer)) {
+      form.userID = p.label || p.issuer;
+    }
     otpauthUri.value = "";
     message.success("已导入 TOTP 配置");
   } catch (e: any) {
@@ -217,9 +213,6 @@ async function loadRoles() {
     @update:show="emit('update:show', $event)"
   >
     <n-form label-placement="left" label-width="72">
-      <n-form-item label="名称" required>
-        <n-input v-model:value="form.title" placeholder="例如：GitHub" />
-      </n-form-item>
       <n-form-item label="分类">
         <n-input-group>
           <n-select
@@ -234,14 +227,14 @@ async function loadRoles() {
           </n-button>
         </n-input-group>
       </n-form-item>
-      <n-form-item label="用户名">
-        <n-input v-model:value="form.username" />
+      <n-form-item label="账号">
+        <n-input v-model:value="form.userID" placeholder="例如：alice@example.com" />
       </n-form-item>
       <n-form-item label="密码">
         <div style="width: 100%">
           <n-input-group>
             <n-input
-              v-model:value="form.password"
+              v-model:value="form.pwd"
               type="password"
               show-password-on="click"
               style="flex: 1"
@@ -250,7 +243,7 @@ async function loadRoles() {
               <template #icon><n-icon><DiceOutline /></n-icon></template>
             </n-button>
           </n-input-group>
-          <PasswordStrengthBar :password="form.password" />
+          <PasswordStrengthBar :password="form.pwd" />
         </div>
       </n-form-item>
       <n-form-item label="手机">
@@ -266,7 +259,7 @@ async function loadRoles() {
         <n-dynamic-tags v-model:value="form.tags" />
       </n-form-item>
       <n-form-item label="备注">
-        <n-input v-model:value="form.notes" type="textarea" :rows="3" />
+        <n-input v-model:value="form.desc" type="textarea" :rows="3" />
       </n-form-item>
       <n-divider style="margin: 12px 0 8px">
         <n-checkbox v-model:checked="totpEnabled">两步验证 (TOTP)</n-checkbox>

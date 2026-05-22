@@ -3,10 +3,15 @@ import { api } from "../api";
 
 const routes: RouteRecordRaw[] = [
   {
-    path: "/login",
-    name: "login",
-    component: () => import("../views/LoginView.vue"),
+    path: "/files",
+    name: "files",
+    component: () => import("../views/FileListView.vue"),
     meta: { public: true },
+  },
+  // 兼容历史路径：旧的 /login 跳转到新的 /files
+  {
+    path: "/login",
+    redirect: "/files",
   },
   {
     path: "/",
@@ -44,10 +49,10 @@ router.beforeEach(async (to) => {
   try {
     const status = await api.vaultStatus();
     if (!status.unlocked) {
-      return { path: "/login" };
+      return { path: "/files" };
     }
   } catch {
-    return { path: "/login" };
+    return { path: "/files" };
   }
   return true;
 });

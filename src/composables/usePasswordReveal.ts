@@ -3,8 +3,8 @@ import { api } from "../api";
 import type { PasswordSummary } from "../api";
 
 export function usePasswordReveal(message: { info: (m: string) => void; error: (m: string) => void }) {
-  const revealedPasswords = ref<Map<string, string>>(new Map());
-  const revealTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  const revealedPasswords = ref<Map<number, string>>(new Map());
+  const revealTimers: Map<number, ReturnType<typeof setTimeout>> = new Map();
   const REVEAL_DURATION = 10; // 秒
 
   function revealPassword(row: PasswordSummary) {
@@ -14,7 +14,7 @@ export function usePasswordReveal(message: { info: (m: string) => void; error: (
       return;
     }
     api.getPassword(row.id).then((entry) => {
-      revealedPasswords.value.set(row.id, entry.password);
+      revealedPasswords.value.set(row.id, entry.pwd);
       // 定时自动隐藏
       const timer = setTimeout(() => hidePassword(row.id), REVEAL_DURATION * 1000);
       revealTimers.set(row.id, timer);
@@ -24,7 +24,7 @@ export function usePasswordReveal(message: { info: (m: string) => void; error: (
     });
   }
 
-  function hidePassword(id: string) {
+  function hidePassword(id: number) {
     revealedPasswords.value.delete(id);
     const timer = revealTimers.get(id);
     if (timer) {

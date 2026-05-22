@@ -1,9 +1,13 @@
 //! Tauri 命令：前端调用入口
+//!
+//! 多账号库改造后：路径不再固定，前端通过 create_vault_at / unlock_with_path 指定。
+//! 最近访问列表 (RecentStore) 与 bcrypt 命令支撑前端的"账号文件列表"页面。
 
 use std::path::PathBuf;
 
 use tauri::State;
 
+use crate::accounts::{RecentEntry, RecentStore};
 use crate::errors::{AppError, AppResult};
 use crate::io_json;
 use crate::io_xlsx;
@@ -15,26 +19,38 @@ use crate::vault::VaultState;
 
 #[derive(serde::Serialize)]
 pub struct VaultStatus {
-    pub exists: bool,
     pub unlocked: bool,
+    pub current_path: Option<String>,
+    pub current_account: Option<String>,
 }
 
 #[tauri::command]
 pub fn vault_status(state: State<'_, VaultState>) -> VaultStatus {
     VaultStatus {
-        exists: state.vault_exists(),
         unlocked: state.is_unlocked(),
+        current_path: state.current_path().map(|p| p.to_string_lossy().to_string()),
+        current_account: state.current_account(),
     }
 }
 
 #[tauri::command]
-pub fn create_vault(master_password: String, state: State<'_, VaultState>) -> AppResult<()> {
-    state.create(&master_password)
+pub fn create_vault_at(
+    path: String,
+    account: String,
+    master_password: String,
+    state: State<'_, VaultState>,
+) -> AppResult<()> {
+    state.create(&PathBuf::from(path), &account, &master_password)
 }
 
 #[tauri::command]
-pub fn unlock_vault(master_password: String, state: State<'_, VaultState>) -> AppResult<()> {
-    state.unlock(&master_password)
+pub fn unlock_with_path(
+    path: String,
+    account: String,
+    master_password: String,
+    state: State<'_, VaultState>,
+) -> AppResult<()> {
+    state.unlock_with_path(&PathBuf::from(path), &account, &master_password)
 }
 
 #[tauri::command]
@@ -48,8 +64,8 @@ pub fn list_passwords(state: State<'_, VaultState>) -> AppResult<Vec<PasswordSum
 }
 
 #[tauri::command]
-pub fn get_password(id: String, state: State<'_, VaultState>) -> AppResult<PasswordEntry> {
-    state.get(&id)
+pub fn get_password(id: i64, state: State<'_, VaultState>) -> AppResult<PasswordEntry> {
+    state.get(id)
 }
 
 #[tauri::command]
@@ -61,25 +77,25 @@ pub fn add_password(
 }
 
 #[tauri::command]
-pub fn delete_password(id: String, state: State<'_, VaultState>) -> AppResult<()> {
-    state.remove(&id)
+pub fn delete_password(id: i64, state: State<'_, VaultState>) -> AppResult<()> {
+    state.remove(id)
 }
 
 #[tauri::command]
 pub fn update_password(
-    id: String,
+    id: i64,
     input: PasswordInput,
     state: State<'_, VaultState>,
 ) -> AppResult<PasswordEntry> {
-    state.update(&id, input)
+    state.update(id, input)
 }
 
 #[tauri::command]
 pub fn get_password_history(
-    id: String,
+    id: i64,
     state: State<'_, VaultState>,
 ) -> AppResult<Vec<PasswordHistoryItem>> {
-    state.history(&id)
+    state.history(id)
 }
 
 #[derive(serde::Serialize)]
@@ -89,10 +105,10 @@ pub struct TotpCode {
 }
 
 #[tauri::command]
-pub fn generate_totp(id: String, state: State<'_, VaultState>) -> AppResult<TotpCode> {
-    let entry = state.get(&id)?;
+pub fn generate_totp(id: i64, state: State<'_, VaultState>) -> AppResult<TotpCode> {
+    let entry = state.get(id)?;
     if entry.totp_secret.is_empty() {
-        return Err(crate::errors::AppError::Invalid("未启用 TOTP".into()));
+        return Err(AppError::Invalid("未启用 TOTP".into()));
     }
     let algo = if entry.totp_algo.is_empty() {
         "SHA1"
@@ -139,11 +155,7 @@ pub fn backup_to_file(
         return Err(AppError::Invalid("备份密码不能为空".into()));
     }
     let snapshot = state.snapshot()?;
-    io_json::backup_to_file(
-        &PathBuf::from(path),
-        &snapshot,
-        backup_password.as_bytes(),
-    )
+    io_json::backup_to_file(&PathBuf::from(path), &snapshot, &backup_password)
 }
 
 /// 从加密 JSON 文件恢复（完全覆盖当前数据）
@@ -153,7 +165,7 @@ pub fn restore_from_file(
     backup_password: String,
     state: State<'_, VaultState>,
 ) -> AppResult<()> {
-    let data = io_json::restore_from_file(&PathBuf::from(path), backup_password.as_bytes())?;
+    let data = io_json::restore_from_file(&PathBuf::from(path), &backup_password)?;
     state.replace(data)
 }
 
@@ -230,11 +242,11 @@ pub fn delete_tag(tag: String, state: State<'_, VaultState>) -> AppResult<usize>
 
 #[tauri::command]
 pub fn rollback_password(
-    id: String,
+    id: i64,
     history_index: usize,
     state: State<'_, VaultState>,
 ) -> AppResult<PasswordEntry> {
-    state.rollback_password(&id, history_index)
+    state.rollback_password(id, history_index)
 }
 
 // ========== 站点词典 ==========
@@ -295,4 +307,61 @@ pub fn apply_anti_capture(window: tauri::WebviewWindow, enabled: bool) -> bool {
 #[tauri::command]
 pub fn export_xlsx_template(path: String) -> AppResult<()> {
     io_xlsx::export_template(&PathBuf::from(path))
+}
+
+// ========== 最近访问列表 ==========
+
+#[tauri::command]
+pub fn list_recent(store: State<'_, RecentStore>) -> Vec<RecentEntry> {
+    store.list()
+}
+
+#[tauri::command]
+pub fn upsert_recent(entry: RecentEntry, store: State<'_, RecentStore>) -> AppResult<()> {
+    store.upsert(entry)
+}
+
+#[tauri::command]
+pub fn remove_recent(path: String, store: State<'_, RecentStore>) -> AppResult<()> {
+    store.remove(&path)
+}
+
+#[tauri::command]
+pub fn clear_recent(store: State<'_, RecentStore>) -> AppResult<()> {
+    store.clear()
+}
+
+// ========== bcrypt（最近访问列表的 UI 层快速密码预校验） ==========
+
+#[tauri::command]
+pub fn bcrypt_hash(password: String) -> AppResult<String> {
+    bcrypt::hash(password, bcrypt::DEFAULT_COST)
+        .map_err(|e| AppError::Crypto(format!("bcrypt hash: {e}")))
+}
+
+#[tauri::command]
+pub fn bcrypt_verify(password: String, hash: String) -> AppResult<bool> {
+    bcrypt::verify(password, &hash).map_err(|e| AppError::Crypto(format!("bcrypt verify: {e}")))
+}
+
+// ========== 文件存在性 ==========
+
+/// 探测路径是否存在（用于前端校验"创建新库"时不能覆盖已有文件）
+#[tauri::command]
+pub fn path_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
+}
+
+/// 检查 `app_data_dir/vault.zhmm` 旧版固定路径文件是否存在。
+///
+/// 旧版（v1）使用 AES-GCM + 单口令派生，新版改为 SM4-GCM + 双因子（账号+口令），
+/// 加密格式与 KDF 输入均不兼容，无法直接读取。FileListView 检测到该文件存在
+/// 时会显示一条不可关闭的提示，引导用户用旧版导出 xlsx 后再在新版导入。
+#[tauri::command]
+pub fn legacy_vault_exists(app: tauri::AppHandle) -> bool {
+    use tauri::Manager;
+    match app.path().app_data_dir() {
+        Ok(dir) => dir.join("vault.zhmm").exists(),
+        Err(_) => false,
+    }
 }

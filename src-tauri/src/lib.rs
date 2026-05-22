@@ -1,3 +1,4 @@
+mod accounts;
 mod commands;
 mod crypto;
 mod errors;
@@ -11,6 +12,7 @@ mod vault;
 mod anti_capture;
 
 use tauri::Manager;
+use accounts::RecentStore;
 use settings::SettingsState;
 use vault::VaultState;
 
@@ -26,16 +28,17 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .expect("无法获取应用数据目录");
-            let vault_path = data_dir.join("vault.zhmm");
             let settings_path = data_dir.join("settings.json");
-            app.manage(VaultState::new(vault_path));
+            let recent_path = data_dir.join("recent_files.json");
+            app.manage(VaultState::new());
             app.manage(SettingsState::new(settings_path));
+            app.manage(RecentStore::new(recent_path));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::vault_status,
-            commands::create_vault,
-            commands::unlock_vault,
+            commands::create_vault_at,
+            commands::unlock_with_path,
             commands::lock_vault,
             commands::list_passwords,
             commands::get_password,
@@ -67,6 +70,14 @@ pub fn run() {
             commands::rekey_vault,
             commands::apply_anti_capture,
             commands::export_xlsx_template,
+            commands::list_recent,
+            commands::upsert_recent,
+            commands::remove_recent,
+            commands::clear_recent,
+            commands::bcrypt_hash,
+            commands::bcrypt_verify,
+            commands::path_exists,
+            commands::legacy_vault_exists,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
