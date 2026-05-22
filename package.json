@@ -2,6 +2,17 @@
   "name": "zhmm-tauri",
   "private": true,
   "version": "0.1.0",
+  "description": "基于国密算法 SM3/SM4 的本地优先密码管理器（Tauri + Vue 3 + Rust），与 Python 版 zhmm 共享 .zmb 密库格式",
+  "author": "szgenle",
+  "license": "MIT",
+  "homepage": "https://github.com/szgenle/zhmm-tauri",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/szgenle/zhmm-tauri.git"
+  },
+  "bugs": {
+    "url": "https://github.com/szgenle/zhmm-tauri/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -1,9 +1,13 @@
 [package]
 name = "zhmm-tauri"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "基于国密算法 SM3/SM4 的本地优先密码管理器（Tauri + Vue 3 + Rust），与 Python 版 zhmm 共享 .zmb 密库格式"
+authors = ["szgenle"]
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/szgenle/zhmm-tauri"
+homepage = "https://github.com/szgenle/zhmm-tauri"
+readme = "../README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
