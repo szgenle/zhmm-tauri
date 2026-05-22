@@ -6,7 +6,6 @@ import {
   CopyOutline,
   CreateOutline,
   EyeOutline,
-  OpenOutline,
   SearchOutline,
   SettingsOutline,
 } from "@vicons/ionicons5";
@@ -429,7 +428,7 @@ const allColumns: DataTableColumns<PasswordSummary> = [
   {
     title: "操作",
     key: "actions",
-    width: 240,
+    width: 180,
     render(row) {
       return h(NSpace, { size: 0 }, {
         default: () => [
@@ -439,8 +438,6 @@ const allColumns: DataTableColumns<PasswordSummary> = [
             { default: () => revealedPasswords.value.has(row.id) ? "隐藏" : "显示", icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }),
           h(NButton, { size: "small", quaternary: true, onClick: () => openEdit(row) },
             { default: () => "编辑", icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) }),
-          ...(row.url ? [h(NButton, { size: "small", quaternary: true, onClick: () => handleOpenUrl(row) },
-            { default: () => "打开", icon: () => h(NIcon, null, { default: () => h(OpenOutline) }) })] : []),
         ],
       });
     },
