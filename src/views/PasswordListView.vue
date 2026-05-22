@@ -284,8 +284,8 @@ function loadVisibleColumns(): string[] {
       if (Array.isArray(arr) && arr.length > 0) return arr;
     }
   } catch {}
-  // 默认全部显示
-  return allColumnConfigs.map((c) => c.key);
+  // 默认隐藏 2FA 列（数据通常较少，且当存在 2FA 时会在账号列下方展示）
+  return allColumnConfigs.map((c) => c.key).filter((k) => k !== "totp");
 }
 
 const visibleColumnKeys = ref<string[]>(loadVisibleColumns());
@@ -328,13 +328,19 @@ const allColumns: DataTableColumns<PasswordSummary> = [
           h(NIcon, { size: 14, class: 'username-copy-icon' }, { default: () => h(CopyOutline) }),
         ]
       );
+      const children: any[] = [nameNode];
       if (pwd) {
-        return h('div', {}, [
-          nameNode,
-          h('div', { style: 'font-family: monospace; font-size: 12px; color: var(--n-text-color-2); margin-top: 2px' }, pwd),
-        ]);
+        children.push(
+          h('div', { style: 'font-family: monospace; font-size: 12px; color: var(--n-text-color-2); margin-top: 2px' }, pwd)
+        );
       }
-      return nameNode;
+      if (row.has_totp) {
+        children.push(
+          h('div', { style: 'margin-top: 2px' }, [h(TotpCell, { id: row.id })])
+        );
+      }
+      if (children.length === 1) return nameNode;
+      return h('div', {}, children);
     },
   },
   {
