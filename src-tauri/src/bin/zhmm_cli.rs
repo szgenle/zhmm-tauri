@@ -33,12 +33,7 @@ struct Cli {
     account: Option<String>,
 
     /// 主密码（建议改用环境变量 ZHMM_PASSWORD；不传则交互输入）
-    #[arg(
-        long,
-        env = "ZHMM_PASSWORD",
-        global = true,
-        hide_env_values = true
-    )]
+    #[arg(long, env = "ZHMM_PASSWORD", global = true, hide_env_values = true)]
     password: Option<String>,
 
     #[command(subcommand)]
@@ -183,7 +178,10 @@ fn run(cli: Cli) -> AppResult<()> {
             print_list(&items);
         }
 
-        Cmd::Get { query, password_only } => {
+        Cmd::Get {
+            query,
+            password_only,
+        } => {
             let state = unlock(cli.password.as_deref(), &file, &account)?;
             if password_only {
                 // -p 仍要求唯一命中：方便 `... | pbcopy`
@@ -209,10 +207,7 @@ fn run(cli: Cli) -> AppResult<()> {
             let state = unlock(cli.password.as_deref(), &file, &account)?;
             let entry = resolve_entry(&state, &query)?;
             if entry.totp_secret.is_empty() {
-                return Err(AppError::Invalid(format!(
-                    "条目 {} 未配置 TOTP",
-                    entry.id
-                )));
+                return Err(AppError::Invalid(format!("条目 {} 未配置 TOTP", entry.id)));
             }
             let algo = if entry.totp_algo.is_empty() {
                 "SHA1"
@@ -289,11 +284,7 @@ fn run(cli: Cli) -> AppResult<()> {
             let state = unlock(cli.password.as_deref(), &file, &account)?;
             let snap = state.snapshot()?;
             io_xlsx::export_xlsx(&out, &snap.entries)?;
-            println!(
-                "✓ 已导出 {} 条 -> {}",
-                snap.entries.len(),
-                out.display()
-            );
+            println!("✓ 已导出 {} 条 -> {}", snap.entries.len(), out.display());
         }
 
         Cmd::ImportXlsx { input } => {
@@ -424,8 +415,7 @@ fn unlock(password: Option<&str>, file: &Path, account: &str) -> AppResult<Vault
 }
 
 fn prompt_password(prompt: &str) -> AppResult<String> {
-    rpassword::prompt_password(prompt)
-        .map_err(|e| AppError::Other(format!("读取密码失败: {e}")))
+    rpassword::prompt_password(prompt).map_err(|e| AppError::Other(format!("读取密码失败: {e}")))
 }
 
 fn read_password_confirm(env_pwd: Option<&str>) -> AppResult<String> {
@@ -512,10 +502,7 @@ fn print_entry(e: &PasswordEntry) {
             "✓ 已配置（用 `zhmm-cli totp <id>` 取码）"
         }
     );
-    println!(
-        "History:  {} 条",
-        e.history.len()
-    );
+    println!("History:  {} 条", e.history.len());
 }
 
 /// 简单按字符数截断（CJK 显示宽度不一定准，CLI 场景可接受）
