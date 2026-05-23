@@ -65,17 +65,17 @@ enum Cmd {
 
     /// 显示某条目（含密码）
     Get {
-        /// 条目 id（来自 list 第一列）
-        id: i64,
-        /// 仅输出密码，便于管道使用：`zhmm-cli get 123 -p | pbcopy`
+        /// 条目 id 或关键字（按 user/url/desc 子串模糊匹配，唯一命中时返回）
+        query: String,
+        /// 仅输出密码，便于管道使用：`zhmm-cli get github -p | pbcopy`
         #[arg(short = 'p', long)]
         password_only: bool,
     },
 
     /// 生成 TOTP 验证码
     Totp {
-        /// 条目 id
-        id: i64,
+        /// 条目 id 或关键字
+        query: String,
     },
 
     /// 新增条目
@@ -108,8 +108,8 @@ enum Cmd {
 
     /// 删除条目
     Del {
-        /// 条目 id
-        id: i64,
+        /// 条目 id 或关键字
+        query: String,
     },
 
     /// 导出为 xlsx
@@ -183,22 +183,36 @@ fn run(cli: Cli) -> AppResult<()> {
             print_list(&items);
         }
 
-        Cmd::Get { id, password_only } => {
+        Cmd::Get { query, password_only } => {
             let state = unlock(cli.password.as_deref(), &file, &account)?;
-            let entry = state.get(id)?;
             if password_only {
-                // 不带换行，便于 `... | pbcopy`
+                // -p 仍要求唯一命中：方便 `... | pbcopy`
+                let entry = resolve_entry(&state, &query)?;
                 print!("{}", entry.pwd);
             } else {
-                print_entry(&entry);
+                // 普通 get：唯一命中显示该条；多条命中全部显示（含密码）
+                let entries = resolve_entries(&state, &query)?;
+                let n = entries.len();
+                if n > 1 {
+                    eprintln!("⚠ 匹配到 {n} 条，全部显示如下：\n");
+                }
+                for (idx, e) in entries.iter().enumerate() {
+                    if idx > 0 {
+                        println!("{}", "-".repeat(60));
+                    }
+                    print_entry(e);
+                }
             }
         }
 
-        Cmd::Totp { id } => {
+        Cmd::Totp { query } => {
             let state = unlock(cli.password.as_deref(), &file, &account)?;
-            let entry = state.get(id)?;
+            let entry = resolve_entry(&state, &query)?;
             if entry.totp_secret.is_empty() {
-                return Err(AppError::Invalid(format!("条目 {id} 未配置 TOTP")));
+                return Err(AppError::Invalid(format!(
+                    "条目 {} 未配置 TOTP",
+                    entry.id
+                )));
             }
             let algo = if entry.totp_algo.is_empty() {
                 "SHA1"
@@ -263,10 +277,12 @@ fn run(cli: Cli) -> AppResult<()> {
             );
         }
 
-        Cmd::Del { id } => {
+        Cmd::Del { query } => {
             let state = unlock(cli.password.as_deref(), &file, &account)?;
+            let entry = resolve_entry(&state, &query)?;
+            let id = entry.id;
             state.remove(id)?;
-            println!("✓ 已删除 id={id}");
+            println!("✓ 已删除 id={id} user={}", entry.user_id);
         }
 
         Cmd::ExportXlsx { out } => {
@@ -310,6 +326,92 @@ fn run(cli: Cli) -> AppResult<()> {
 }
 
 // ============== 辅助函数 ==============
+
+/// 解析用户输入为具体条目（要求唯一命中，用于 totp/del/get -p）。
+/// 1. 纯数字且能记录 id 精确命中 → 返回该条目
+/// 2. 否则按 user_id / url / desc 子串不区分大小写匹配
+///    - 0 条 → 报错
+///    - 1 条 → 返回
+///    - >1 条 → 列出候选让用户细化
+fn resolve_entry(state: &VaultState, query: &str) -> AppResult<PasswordEntry> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Err(AppError::Invalid("查询字串为空".into()));
+    }
+    // 1) 先试 id
+    if let Ok(id) = q.parse::<i64>() {
+        if let Ok(entry) = state.get(id) {
+            return Ok(entry);
+        }
+    }
+    // 2) 子串搜索
+    let q_low = q.to_lowercase();
+    let items = state.list()?;
+    let hits: Vec<&PasswordSummary> = items
+        .iter()
+        .filter(|i| {
+            i.user_id.to_lowercase().contains(&q_low)
+                || i.url.to_lowercase().contains(&q_low)
+                || i.desc.to_lowercase().contains(&q_low)
+        })
+        .collect();
+    match hits.len() {
+        0 => Err(AppError::Other(format!(
+            "找不到与 “{q}” 匹配的条目（请试 zhmm-cli list 查看现有条目）"
+        ))),
+        1 => state.get(hits[0].id),
+        n => {
+            eprintln!("⚠ 匹配到 {n} 条，请进一步细化关键字或直接传 id：");
+            for i in &hits {
+                eprintln!(
+                    "  id={:<12} role={:<4} user={:<24} url={}",
+                    i.id,
+                    ellipsize(&i.role, 4),
+                    ellipsize(&i.user_id, 24),
+                    i.url
+                );
+            }
+            Err(AppError::Invalid(format!("“{q}” 不唯一")))
+        }
+    }
+}
+
+/// 解析用户输入为一或多条完整条目（用于 get 多命中全部展示）。
+/// 规则同 resolve_entry，但多条命中不报错、全部返回。
+fn resolve_entries(state: &VaultState, query: &str) -> AppResult<Vec<PasswordEntry>> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Err(AppError::Invalid("查询字串为空".into()));
+    }
+    // 1) 先试 id。纯数字命中 → 只返该条，不再做子串搜
+    if let Ok(id) = q.parse::<i64>() {
+        if let Ok(entry) = state.get(id) {
+            return Ok(vec![entry]);
+        }
+    }
+    // 2) 子串搜索
+    let q_low = q.to_lowercase();
+    let items = state.list()?;
+    let hit_ids: Vec<i64> = items
+        .iter()
+        .filter(|i| {
+            i.user_id.to_lowercase().contains(&q_low)
+                || i.url.to_lowercase().contains(&q_low)
+                || i.desc.to_lowercase().contains(&q_low)
+        })
+        .map(|i| i.id)
+        .collect();
+    if hit_ids.is_empty() {
+        return Err(AppError::Other(format!(
+            "找不到与 “{q}” 匹配的条目（请试 zhmm-cli list 查看现有条目）"
+        )));
+    }
+    let mut entries = Vec::with_capacity(hit_ids.len());
+    for id in hit_ids {
+        entries.push(state.get(id)?);
+    }
+    Ok(entries)
+}
 
 fn unlock(password: Option<&str>, file: &Path, account: &str) -> AppResult<VaultState> {
     let pwd = match password {
