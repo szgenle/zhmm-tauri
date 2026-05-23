@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, h, nextTick, onMounted, ref } from "vue";
-import { NButton, NIcon, NTag, NSpace, NCheckbox, NPopover, useMessage, useDialog } from "naive-ui";
+import { NButton, NIcon, NInput, NTag, NSpace, NCheckbox, NPopover, useMessage, useDialog } from "naive-ui";
 import {
   AddOutline,
   CopyOutline,
@@ -453,7 +453,14 @@ const columns = computed<DataTableColumns<PasswordSummary>>(() => {
   return allColumns.filter((col: any) => visibleColumnKeys.value.includes(col.key));
 });
 
-onMounted(loadData);
+const searchInputRef = ref<InstanceType<typeof NInput> | null>(null);
+
+onMounted(async () => {
+  await loadData();
+  nextTick(() => {
+    searchInputRef.value?.focus();
+  });
+});
 </script>
 
 <template>
@@ -468,6 +475,7 @@ onMounted(loadData);
           style="width: 130px"
         />
         <n-input
+          ref="searchInputRef"
           v-model:value="searchQuery"
           placeholder="搜索账号..."
           clearable
