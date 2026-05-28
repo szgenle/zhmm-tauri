@@ -14,6 +14,7 @@ const tabValue = computed<string>({
   set: (val: string) => {
     const map: Record<string, string> = {
       passwords: "/",
+      "role-management": "/role-management",
       "data-management": "/data-management",
       settings: "/settings",
     };
@@ -74,6 +75,7 @@ onUnmounted(() => {
         <span class="brand">账号小本本</span>
         <n-tabs :value="tabValue" type="line" @update:value="tabValue = $event" class="nav-tabs">
           <n-tab name="passwords">账号管理</n-tab>
+          <n-tab name="role-management">分类管理</n-tab>
           <n-tab name="data-management">数据管理</n-tab>
           <n-tab name="settings">系统设置</n-tab>
         </n-tabs>

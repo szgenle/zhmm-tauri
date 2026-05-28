@@ -24,6 +24,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "账号管理" },
       },
       {
+        path: "role-management",
+        name: "role-management",
+        component: () => import("../views/RoleManagementView.vue"),
+        meta: { title: "分类管理" },
+      },
+      {
         path: "data-management",
         name: "data-management",
         component: () => import("../views/DataManagementView.vue"),
