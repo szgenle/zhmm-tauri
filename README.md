@@ -82,6 +82,13 @@
       <sub><b>设置：主题 / 自动锁定 / 主密码</b></sub>
     </td>
   </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/07-role-management.png" alt="分类管理" /><br/>
+      <sub><b>分类管理：手机号 / 邮箱 概览</b></sub>
+    </td>
+    <td align="center" width="50%"></td>
+  </tr>
 </table>
 
 ---
