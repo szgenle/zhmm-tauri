@@ -293,7 +293,7 @@ const STORAGE_KEY = "zhmm_visible_columns_v4";
 // 默认勾选：分类、账号(fixed)、网址、邮箱、手机、标签、备注、操作(fixed)
 // 2FA 和 密码更新时间 默认隐藏
 const DEFAULT_VISIBLE_KEYS = [
-  "role", "userID", "url", "email", "phone", "tags", "desc", "actions",
+  "role", "userID", "url", "email", "phone", "desc", "actions",
 ];
 
 function loadVisibleColumns(): string[] {
