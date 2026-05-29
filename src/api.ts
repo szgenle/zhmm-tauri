@@ -28,6 +28,8 @@ export interface PasswordSummary {
   tags: string[];
   has_totp: boolean;
   utime: number;
+  /** 当前密码生效时间；后端从 history[0].utime 或 id 派生 */
+  pwd_utime: number;
 }
 
 export interface PasswordEntry {

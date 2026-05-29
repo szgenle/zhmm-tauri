@@ -185,10 +185,14 @@ pub struct PasswordSummary {
     pub tags: Vec<String>,
     pub has_totp: bool,
     pub utime: i64,
+    /// 当前密码生效时间：history[0].utime 表示上次密码替换的时刻；
+    /// 若从未改过密码，则回退到条目创建时间 (id)。
+    pub pwd_utime: i64,
 }
 
 impl From<&PasswordEntry> for PasswordSummary {
     fn from(e: &PasswordEntry) -> Self {
+        let pwd_utime = e.history.first().map(|h| h.utime).unwrap_or(e.id);
         Self {
             id: e.id,
             role: e.role.clone(),
@@ -200,6 +204,7 @@ impl From<&PasswordEntry> for PasswordSummary {
             tags: e.tags.clone(),
             has_totp: !e.totp_secret.is_empty(),
             utime: e.utime,
+            pwd_utime,
         }
     }
 }

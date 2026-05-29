@@ -284,14 +284,14 @@ const allColumnConfigs: ColumnConfig[] = [
   { key: "tags", label: "标签" },
   { key: "desc", label: "备注" },
   { key: "totp", label: "2FA" },
-  { key: "utime", label: "更新时间" },
+  { key: "pwd_utime", label: "密码更新时间" },
   { key: "actions", label: "操作", fixed: true },
 ];
 
-const STORAGE_KEY = "zhmm_visible_columns_v3";
+const STORAGE_KEY = "zhmm_visible_columns_v4";
 
 // 默认勾选：分类、账号(fixed)、网址、邮箱、手机、标签、备注、操作(fixed)
-// 2FA 和更新时间 默认隐藏
+// 2FA 和 密码更新时间 默认隐藏
 const DEFAULT_VISIBLE_KEYS = [
   "role", "userID", "url", "email", "phone", "tags", "desc", "actions",
 ];
@@ -427,10 +427,10 @@ const allColumns: DataTableColumns<PasswordSummary> = [
     },
   },
   {
-    title: "更新时间",
-    key: "utime",
+    title: "密码更新时间",
+    key: "pwd_utime",
     width: 170,
-    render: (row) => formatUtime(row.utime),
+    render: (row) => formatUtime(row.pwd_utime),
   },
   {
     title: "操作",
