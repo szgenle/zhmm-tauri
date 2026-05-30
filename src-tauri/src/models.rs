@@ -26,6 +26,11 @@ pub const CUSTOM_FIELD_KEY_MAX: usize = 64;
 pub const CUSTOM_FIELD_VALUE_MAX: usize = 4096;
 pub const CUSTOM_FIELDS_MAX_COUNT: usize = 64;
 
+/// 模板 match_rules 总条数上限：超出会被裁剪（防失控配置拖慢推荐扫描）
+pub const MATCH_RULES_MAX_COUNT: usize = 32;
+/// match_rules 单条 value 长度上限
+pub const MATCH_RULE_VALUE_MAX: usize = 128;
+
 /// TOTP 算法限制
 #[allow(dead_code)]
 pub const SUPPORTED_TOTP_ALGOS: &[&str] = &["", "SHA1", "SHA256", "SHA512", "SM3"];
@@ -382,7 +387,21 @@ pub fn default_templates() -> Vec<AccountTemplate> {
                     placeholder: String::new(),
                 },
             ],
-            match_rules: Vec::new(),
+            // 国内主流银行域名 + 通用关键词；命中即推荐应用「银行卡」模板
+            match_rules: vec![
+                TemplateMatchRule::UrlContains("icbc.com.cn".into()),
+                TemplateMatchRule::UrlContains("ccb.com".into()),
+                TemplateMatchRule::UrlContains("abchina.com".into()),
+                TemplateMatchRule::UrlContains("boc.cn".into()),
+                TemplateMatchRule::UrlContains("bankcomm.com".into()),
+                TemplateMatchRule::UrlContains("cmbchina.com".into()),
+                TemplateMatchRule::UrlContains("spdb.com.cn".into()),
+                TemplateMatchRule::UrlContains("cmbc.com.cn".into()),
+                TemplateMatchRule::UrlContains("psbc.com".into()),
+                TemplateMatchRule::Keyword("银行".into()),
+                TemplateMatchRule::Keyword("信用卡".into()),
+                TemplateMatchRule::Keyword("储蓄卡".into()),
+            ],
             utime: now,
         },
         AccountTemplate {
@@ -412,7 +431,14 @@ pub fn default_templates() -> Vec<AccountTemplate> {
                     placeholder: "YYYY-MM-DD".into(),
                 },
             ],
-            match_rules: Vec::new(),
+            match_rules: vec![
+                TemplateMatchRule::Keyword("身份证".into()),
+                TemplateMatchRule::Keyword("护照".into()),
+                TemplateMatchRule::Keyword("驾照".into()),
+                TemplateMatchRule::Keyword("驾驶证".into()),
+                TemplateMatchRule::Keyword("证件".into()),
+                TemplateMatchRule::Keyword("户口".into()),
+            ],
             utime: now,
         },
         AccountTemplate {
@@ -442,7 +468,13 @@ pub fn default_templates() -> Vec<AccountTemplate> {
                     placeholder: String::new(),
                 },
             ],
-            match_rules: Vec::new(),
+            match_rules: vec![
+                TemplateMatchRule::Role("工作".into()),
+                TemplateMatchRule::Keyword("内网".into()),
+                TemplateMatchRule::Keyword("VPN".into()),
+                TemplateMatchRule::Keyword("OA".into()),
+                TemplateMatchRule::Keyword("工号".into()),
+            ],
             utime: now,
         },
         AccountTemplate {
@@ -472,10 +504,51 @@ pub fn default_templates() -> Vec<AccountTemplate> {
                     placeholder: String::new(),
                 },
             ],
-            match_rules: Vec::new(),
+            match_rules: vec![
+                TemplateMatchRule::UrlContains("steampowered.com".into()),
+                TemplateMatchRule::UrlContains("steamcommunity.com".into()),
+                TemplateMatchRule::UrlContains("epicgames.com".into()),
+                TemplateMatchRule::UrlContains("battle.net".into()),
+                TemplateMatchRule::UrlContains("mihoyo.com".into()),
+                TemplateMatchRule::UrlContains("hoyoverse.com".into()),
+                TemplateMatchRule::UrlContains("ea.com".into()),
+                TemplateMatchRule::UrlContains("ubisoft.com".into()),
+                TemplateMatchRule::Keyword("游戏".into()),
+                TemplateMatchRule::Keyword("steam".into()),
+            ],
             utime: now,
         },
     ]
+}
+
+/// 模板 match_rules 归一化：trim、去空、按 (kind, value) 去重、限制总数与单条长度
+pub fn normalize_match_rules(raw: &[TemplateMatchRule]) -> Vec<TemplateMatchRule> {
+    let mut seen: std::collections::HashSet<(u8, String)> = std::collections::HashSet::new();
+    let mut out: Vec<TemplateMatchRule> = Vec::new();
+    for r in raw {
+        let (kind_id, value): (u8, String) = match r {
+            TemplateMatchRule::UrlContains(v) => (0, v.trim().to_string()),
+            TemplateMatchRule::Keyword(v) => (1, v.trim().to_string()),
+            TemplateMatchRule::Role(v) => (2, v.trim().to_string()),
+        };
+        if value.is_empty() {
+            continue;
+        }
+        let value: String = value.chars().take(MATCH_RULE_VALUE_MAX).collect();
+        if !seen.insert((kind_id, value.clone())) {
+            continue;
+        }
+        let normalized = match kind_id {
+            0 => TemplateMatchRule::UrlContains(value),
+            1 => TemplateMatchRule::Keyword(value),
+            _ => TemplateMatchRule::Role(value),
+        };
+        out.push(normalized);
+        if out.len() >= MATCH_RULES_MAX_COUNT {
+            break;
+        }
+    }
+    out
 }
 
 /// 扩展字段归一化：去空 key、截断超长、差异量限数量
@@ -623,6 +696,53 @@ mod tests {
         let json = serde_json::to_string(&e).unwrap();
         assert!(!json.contains("custom_fields"));
         assert!(!json.contains("template_id"));
+    }
+
+    /// 内置模板的 match_rules 应配齐：能匹配到典型 url / 关键词 / role
+    #[test]
+    fn default_templates_have_match_rules() {
+        let templates = default_templates();
+        let bank = templates.iter().find(|t| t.id == "bank_card").unwrap();
+        assert!(
+            bank.match_rules
+                .iter()
+                .any(|r| matches!(r, TemplateMatchRule::UrlContains(s) if s.contains("icbc"))),
+            "银行卡模板应包含 icbc 域名匹配"
+        );
+        let work = templates.iter().find(|t| t.id == "work_internal").unwrap();
+        assert!(
+            work.match_rules
+                .iter()
+                .any(|r| matches!(r, TemplateMatchRule::Role(s) if s == "工作")),
+            "工作内网模板应匹配 role=工作"
+        );
+        let id_card = templates.iter().find(|t| t.id == "id_card").unwrap();
+        assert!(
+            id_card
+                .match_rules
+                .iter()
+                .any(|r| matches!(r, TemplateMatchRule::Keyword(s) if s == "身份证")),
+            "证件模板应匹配关键词「身份证」"
+        );
+    }
+
+    /// normalize_match_rules 去重、去空、限制总数
+    #[test]
+    fn normalize_match_rules_basic() {
+        let raw = vec![
+            TemplateMatchRule::UrlContains("  icbc.com.cn  ".into()),
+            TemplateMatchRule::UrlContains("icbc.com.cn".into()), // 与上条 trim 后相同，应去重
+            TemplateMatchRule::Keyword("".into()),                // 空，应丢弃
+            TemplateMatchRule::Keyword("   ".into()),             // 全空白，应丢弃
+            TemplateMatchRule::Role("工作".into()),
+            TemplateMatchRule::Keyword("工作".into()), // 与 Role 字面一样但 kind 不同，应保留
+        ];
+        let out = normalize_match_rules(&raw);
+        assert_eq!(out.len(), 3, "应保留 3 条：1 条 url + 1 条 role + 1 条 keyword");
+        assert!(matches!(
+            out[0],
+            TemplateMatchRule::UrlContains(ref s) if s == "icbc.com.cn"
+        ));
     }
 
     /// normalize_custom_fields 应去空 key、截断超长、限制总数

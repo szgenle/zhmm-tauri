@@ -11,8 +11,8 @@ use zeroize::Zeroize;
 use crate::crypto::{open as crypto_open, seal as crypto_seal};
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    default_templates, normalize_custom_fields, normalize_tags, now_ts, AccountTemplate,
-    PasswordEntry, PasswordHistoryItem, PasswordInput, VaultData, HISTORY_MAX,
+    default_templates, normalize_custom_fields, normalize_match_rules, normalize_tags, now_ts,
+    AccountTemplate, PasswordEntry, PasswordHistoryItem, PasswordInput, VaultData, HISTORY_MAX,
 };
 
 /// 备份条目元信息（返回给前端）
@@ -168,6 +168,7 @@ impl VaultState {
             return Err(AppError::Invalid("模板名称不能为空".into()));
         }
         template.id = id;
+        template.match_rules = normalize_match_rules(&template.match_rules);
         template.utime = now_ts();
 
         {

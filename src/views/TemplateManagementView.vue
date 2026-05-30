@@ -25,6 +25,7 @@ import {
   type AccountTemplate,
   type TemplateField,
   type TemplateFieldType,
+  type TemplateMatchRule,
 } from "../api";
 
 const message = useMessage();
@@ -42,12 +43,20 @@ const form = reactive<{
   name: string;
   icon: string;
   fields: TemplateField[];
+  match_rules: TemplateMatchRule[];
 }>({
   id: "",
   name: "",
   icon: "",
   fields: [],
+  match_rules: [],
 });
+
+const matchRuleKindOptions: { label: string; value: TemplateMatchRule["kind"] }[] = [
+  { label: "网址包含", value: "url_contains" },
+  { label: "关键词", value: "keyword" },
+  { label: "分类等于", value: "role" },
+];
 
 const fieldTypeOptions: { label: string; value: TemplateFieldType }[] = [
   { label: "单行文本", value: "text" },
@@ -64,6 +73,7 @@ function resetForm() {
   form.name = "";
   form.icon = "";
   form.fields = [];
+  form.match_rules = [];
 }
 
 function openCreate() {
@@ -84,6 +94,7 @@ function openEdit(t: AccountTemplate) {
     required: !!f.required,
     placeholder: f.placeholder || "",
   }));
+  form.match_rules = (t.match_rules || []).map((r) => ({ ...r }));
   showEditor.value = true;
 }
 
@@ -107,6 +118,13 @@ function moveField(idx: number, delta: number) {
   const tmp = form.fields[idx];
   form.fields[idx] = form.fields[j];
   form.fields[j] = tmp;
+}
+
+function addMatchRule() {
+  form.match_rules.push({ kind: "url_contains", value: "" });
+}
+function removeMatchRule(idx: number) {
+  form.match_rules.splice(idx, 1);
 }
 
 function validateForm(): string | null {
@@ -150,6 +168,9 @@ async function handleSave() {
         required: !!f.required,
         placeholder: f.placeholder?.trim() || undefined,
       })),
+      match_rules: form.match_rules
+        .map((r) => ({ kind: r.kind, value: (r.value || "").trim() } as TemplateMatchRule))
+        .filter((r) => !!r.value),
     };
     await api.upsertTemplate(payload);
     message.success(editorMode.value === "create" ? "模板已创建" : "模板已更新");
@@ -261,6 +282,29 @@ const columns: DataTableColumns<AccountTemplate> = [
             f.label,
           ),
         ),
+      );
+    },
+  },
+  {
+    title: "推荐规则",
+    key: "match_rules",
+    width: 90,
+    render(row) {
+      const n = row.match_rules?.length || 0;
+      if (n === 0)
+        return h(
+          "span",
+          { style: "color: var(--n-text-color-3); font-size: 12px;" },
+          "—",
+        );
+      return h(
+        "span",
+        {
+          style:
+            "padding: 1px 8px; border-radius: 8px; background: var(--app-border-color, rgba(0,0,0,0.06)); font-size: 12px;",
+          title: "命中任一条即推荐应用此模板",
+        },
+        `${n} 条`,
       );
     },
   },
@@ -448,6 +492,66 @@ const hasAllBuiltins = computed(() => {
               <n-icon><AddOutline /></n-icon>
             </template>
             新增字段
+          </n-button>
+        </div>
+
+        <n-divider style="margin: 16px 0 8px">自动推荐规则</n-divider>
+        <div style="font-size:12px;color:var(--n-text-color-3);margin:-4px 0 8px 0;line-height:1.6">
+          编辑账号时如命中以下任一规则，会提示「应用此模板」。
+          主要适合以 url 为主要识别点的账号（如「看到 icbc.com.cn 即推荐银行卡」）。
+        </div>
+        <div class="fields-editor">
+          <div v-if="form.match_rules.length === 0" class="fields-empty">
+            未配置推荐规则，点击下方「新增规则」添加
+          </div>
+          <div
+            v-for="(r, i) in form.match_rules"
+            :key="i"
+            class="field-row"
+          >
+            <div class="field-ord">{{ i + 1 }}</div>
+            <n-select
+              v-model:value="r.kind"
+              :options="matchRuleKindOptions"
+              size="small"
+              style="width: 130px"
+            />
+            <n-input
+              v-model:value="r.value"
+              :placeholder="
+                r.kind === 'url_contains'
+                  ? '如：icbc.com.cn'
+                  : r.kind === 'keyword'
+                  ? '如：银行、身份证'
+                  : '如：工作'
+              "
+              size="small"
+              style="flex: 1; min-width: 100px"
+            />
+            <div class="field-actions">
+              <n-button
+                quaternary
+                size="tiny"
+                type="error"
+                @click="removeMatchRule(i)"
+                title="删除"
+              >
+                <template #icon>
+                  <n-icon><TrashOutline /></n-icon>
+                </template>
+              </n-button>
+            </div>
+          </div>
+          <n-button
+            block
+            dashed
+            @click="addMatchRule"
+            style="margin-top: 8px"
+          >
+            <template #icon>
+              <n-icon><AddOutline /></n-icon>
+            </template>
+            新增规则
           </n-button>
         </div>
       </n-form>

@@ -12,6 +12,10 @@ import PasswordStrengthBar from "./PasswordStrengthBar.vue";
 import RandomPasswordDialog from "./RandomPasswordDialog.vue";
 import AddRoleDialog from "./AddRoleDialog.vue";
 import TagPickerDialog from "./TagPickerDialog.vue";
+import {
+  pickRecommendation,
+  type MatchResult,
+} from "../utils/templateMatcher";
 
 const props = defineProps<{
   show: boolean;
@@ -57,6 +61,39 @@ const templateOptions = computed(() => [
 const currentTemplate = computed<AccountTemplate | null>(() =>
   templates.value.find((t) => t.id === form.template_id) || null,
 );
+
+// 模板自动推荐（alpha.2）：根据 url / name / role / desc 实时评分
+const recommendation = computed<MatchResult | null>(() => {
+  if (!templates.value.length) return null;
+  // 已选中同一推荐或被用户主动选了其他模板时不提示
+  return pickRecommendation(templates.value, {
+    url: form.url,
+    name: form.name,
+    role: form.role,
+    desc: form.desc,
+    userID: form.userID,
+  });
+});
+// 本会话内被用户「忽略」过的推荐模板 id（仅 dialog 生命周期）
+const dismissedRecommendIds = ref<Set<string>>(new Set());
+const showRecommendation = computed<boolean>(() => {
+  const r = recommendation.value;
+  if (!r) return false;
+  // 用户已选中任何模板时都不提示（避免覆盖明确选择）
+  if (form.template_id) return false;
+  if (dismissedRecommendIds.value.has(r.template.id)) return false;
+  return true;
+});
+function applyRecommendation() {
+  const r = recommendation.value;
+  if (!r) return;
+  form.template_id = r.template.id;
+}
+function dismissRecommendation() {
+  const r = recommendation.value;
+  if (!r) return;
+  dismissedRecommendIds.value.add(r.template.id);
+}
 
 // TOTP 区域展开控制
 const totpEnabled = ref(false);
@@ -150,6 +187,7 @@ watch(
     } else {
       resetForm();
     }
+    dismissedRecommendIds.value = new Set();
     loadRoles();
     loadTemplates();
     loadVaultKey();
@@ -339,6 +377,23 @@ function onTagPickerUpdate(next: string[]) {
           placeholder="可选：按账号类型附加业务字段"
         />
       </n-form-item>
+      <n-alert
+        v-if="showRecommendation"
+        type="info"
+        :show-icon="false"
+        style="margin: -4px 0 12px 72px; padding: 6px 12px"
+      >
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px">
+          <span>
+            建议应用「{{ recommendation!.template.icon ? recommendation!.template.icon + ' ' : '' }}{{ recommendation!.template.name }}」模板
+            <span style="color:var(--n-text-color-3);font-size:12px;margin-left:4px">（{{ recommendation!.reasons[0] }}）</span>
+          </span>
+          <n-space :size="6">
+            <n-button size="tiny" type="primary" @click="applyRecommendation">应用</n-button>
+            <n-button size="tiny" quaternary @click="dismissRecommendation">忽略</n-button>
+          </n-space>
+        </div>
+      </n-alert>
       <n-form-item label="名称">
         <n-input v-model:value="form.name" placeholder="例如：微信、招商银行、GitHub" />
       </n-form-item>
