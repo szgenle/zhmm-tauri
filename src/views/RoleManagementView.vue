@@ -5,7 +5,7 @@
  * 顶部按 role（分类，身份维度）切换；下方按 tags（用途维度）分组渲染多个列表。
  * - 同条目带多个标签时，会在每个相关分组里出现一次
  * - 没有标签的条目归入"未分类"分组
- * - 每个标签分组的可见列独立持久化（localStorage: zhmm_role_mgmt_columns_v1）
+ * - 每个标签分组的可见列独立持久化（localStorage: ajot_role_mgmt_columns_v1）
  * - 双击行进入编辑（复用 PasswordEditDialog）
  */
 import { computed, h, onMounted, ref } from "vue";
@@ -51,7 +51,7 @@ const allColumnConfigs: ColumnConfig[] = [
   { key: "utime", label: "更新时间" },
 ];
 
-const STORAGE_KEY = "zhmm_role_mgmt_columns_v1";
+const STORAGE_KEY = "ajot_role_mgmt_columns_v1";
 const DEFAULT_VISIBLE_KEYS = ["userID", "url", "desc"];
 
 function loadGroupColumnPrefs(): Record<string, string[]> {

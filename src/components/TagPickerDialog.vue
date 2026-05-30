@@ -33,7 +33,7 @@ const loading = ref(false);
 function recentStorageKey(): string {
   // 空 key 时退化为全局，避免崩溃
   const k = props.vaultKey || "__default__";
-  return `zhmm:recent-tags:${k}`;
+  return `ajot:recent-tags:${k}`;
 }
 
 function loadRecent(): string[] {

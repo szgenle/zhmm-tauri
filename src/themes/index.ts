@@ -30,7 +30,7 @@ export const visualStyleOptions: { key: VisualStyle; label: string; description:
   { key: "warm", label: "温暖圆润", description: "大圆角、柔和渐变", color: "#f97316" },
 ];
 
-const STORAGE_KEY = "zhmm_visual_style";
+const STORAGE_KEY = "ajot_visual_style";
 
 export function getVisualStyle(): VisualStyle {
   try {

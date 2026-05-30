@@ -466,9 +466,10 @@ const allColumnConfigs: ColumnConfig[] = [
 ];
 
 // v6 起新增 "name" 列，默认可见。仅在未设过 v6 时从 v5/v4 迁移作为全局默认
-const STORAGE_KEY = "zhmm_visible_columns_v6";
-const LEGACY_KEY_V5 = "zhmm_visible_columns_v5";
-const LEGACY_KEY_V4 = "zhmm_visible_columns_v4";
+// v2.0 起前缀由 zhmm_ 切换到 ajot_，迁移由 storageMigration.ts 在启动时统一处理
+const STORAGE_KEY = "ajot_visible_columns_v6";
+const LEGACY_KEY_V5 = "ajot_visible_columns_v5";
+const LEGACY_KEY_V4 = "ajot_visible_columns_v4";
 const DEFAULT_TAG_KEY = "__default__";
 
 // 默认勾选：分类、名称、账号(fixed)、网址、邮箱、手机、备注、操作(fixed)

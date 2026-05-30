@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Account Jotter",
-  "version": "2.0.0-alpha.0",
-  "identifier": "com.szgenle.zhmm",
+  "version": "2.0.0-alpha.1",
+  "identifier": "com.szgenle.accountjotter",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -30,6 +30,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["ajot"],
+        "name": "Account Jotter Vault",
+        "description": "账号小本本加密账号库（v7：SM4-GCM + Argon2id）",
+        "role": "Editor",
+        "mimeType": "application/x-account-jotter"
+      }
     ]
   }
 }

@@ -85,7 +85,7 @@ const RECENT_TAGS_LIMIT = 30;
 
 function recentTagsKey(): string {
   const k = vaultKey.value || "__default__";
-  return `zhmm:recent-tags:${k}`;
+  return `ajot:recent-tags:${k}`;
 }
 
 function pushToRecentTags(tags: string[]) {
