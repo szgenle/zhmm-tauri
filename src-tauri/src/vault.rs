@@ -11,8 +11,8 @@ use zeroize::Zeroize;
 use crate::crypto::{open as crypto_open, seal as crypto_seal};
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    normalize_tags, now_ts, PasswordEntry, PasswordHistoryItem, PasswordInput, VaultData,
-    HISTORY_MAX,
+    normalize_custom_fields, normalize_tags, now_ts, PasswordEntry, PasswordHistoryItem,
+    PasswordInput, VaultData, HISTORY_MAX,
 };
 
 /// 备份条目元信息（返回给前端）
@@ -118,6 +118,10 @@ impl VaultState {
                 for h in &mut e.history {
                     h.pwd.zeroize();
                 }
+                // 扩展字段可能存证件号/口令卷等，同步 zeroize
+                for (_, v) in e.custom_fields.iter_mut() {
+                    v.zeroize();
+                }
             }
         }
         if let Some(mut m) = self.master.write().take() {
@@ -172,6 +176,8 @@ impl VaultState {
         entry.totp_algo = std::mem::take(&mut input.totp_algo);
         entry.totp_digits = input.totp_digits;
         entry.totp_period = input.totp_period;
+        entry.template_id = std::mem::take(&mut input.template_id);
+        entry.custom_fields = normalize_custom_fields(std::mem::take(&mut input.custom_fields));
 
         {
             let mut guard = self.data.write();
@@ -229,6 +235,9 @@ impl VaultState {
             entry.totp_algo = std::mem::take(&mut input.totp_algo);
             entry.totp_digits = input.totp_digits;
             entry.totp_period = input.totp_period;
+            entry.template_id = std::mem::take(&mut input.template_id);
+            entry.custom_fields =
+                normalize_custom_fields(std::mem::take(&mut input.custom_fields));
             entry.utime = now_ts();
 
             if !entry.role.is_empty() && !data.roles.iter().any(|r| r == &entry.role) {

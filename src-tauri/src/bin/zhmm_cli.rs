@@ -266,6 +266,8 @@ fn run(cli: Cli) -> AppResult<()> {
                 totp_algo: String::new(),
                 totp_digits: 6,
                 totp_period: 30,
+                template_id: String::new(),
+                custom_fields: Default::default(),
             };
             let entry = state.add(input)?;
             println!(

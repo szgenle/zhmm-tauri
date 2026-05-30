@@ -1,9 +1,17 @@
-//! 数据模型：与 Python 版 JSON Schema 完全互通
+//! 数据模型：账号小本本 v7 schema（兼容读取 Python 版 v6/v5 .zmb）
 //!
-//! 顶层 `{ data, roles, utime }`；条目字段沿用 Python 版命名（`userID`/`pwd`/`desc`/`utime`）。
-//! Rust 内部 snake_case，serde 在序列化层映射到 Python 风格字段名。
+//! 顶层 `{ data, roles, utime, templates? }`；条目沿用 Python 版命名
+//! （`userID`/`pwd`/`desc`/`utime`）以保持单向导入兼容。v2.0 新增字段：
+//! - `PasswordEntry.custom_fields`：扩展字段 map，承载"千差万别的账号信息"
+//! - `PasswordEntry.template_id`：指向当前 vault 里的 AccountTemplate
+//! - `VaultData.templates`：vault 级账号模板注册表
+//!
+//! 所有新增字段都带 `#[serde(default)]`，旧库（含 Python 单向导入的 .zmb）
+//! 不需要任何迁移即可加载；写入时按需省略空值，避免给 v6/v5 老文件
+//! 引入额外字节（虽然 v2.0 起一律写 v7，但保持紧凑仍是好习惯）。
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use zeroize::Zeroize;
 
 pub const DEFAULT_ROLE: &str = "个人";
@@ -12,6 +20,11 @@ pub const DEFAULT_ROLES: &[&str] = &["个人", "工作", "其它"];
 pub const TAG_MAX_LEN: usize = 32;
 pub const TAGS_MAX_COUNT: usize = 16;
 pub const HISTORY_MAX: usize = 5;
+
+/// 单条扩展字段最大长度（key/value 各自上限，防退化为附件）
+pub const CUSTOM_FIELD_KEY_MAX: usize = 64;
+pub const CUSTOM_FIELD_VALUE_MAX: usize = 4096;
+pub const CUSTOM_FIELDS_MAX_COUNT: usize = 64;
 
 /// TOTP 算法限制
 #[allow(dead_code)]
@@ -78,6 +91,14 @@ pub struct PasswordEntry {
     pub tags: Vec<String>,
     #[serde(default)]
     pub history: Vec<PasswordHistoryItem>,
+    /// 当前条目应用的模板 id（指向 `VaultData.templates`），空串表示无模板
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub template_id: String,
+    /// 扩展字段（key -> value），承载模板定义之外或之内的差异化信息
+    /// - BTreeMap 保证序列化顺序稳定（避免无意义 diff）
+    /// - 不区分加密/明文：v2.0 P1 不引入字段级加密，整库整体由 v7 加密
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub custom_fields: BTreeMap<String, String>,
 }
 
 fn default_role() -> String {
@@ -110,6 +131,8 @@ impl PasswordEntry {
             totp_period: 30,
             tags: Vec::new(),
             history: Vec::new(),
+            template_id: String::new(),
+            custom_fields: BTreeMap::new(),
         }
     }
 }
@@ -120,7 +143,10 @@ impl Default for PasswordEntry {
     }
 }
 
-/// 整个密码库（明文）；顶层 `{ data, roles, utime }`，对齐 Python `Vault.to_dict()`
+/// 账号库明文模型（v7 schema）；顶层 `{ data, roles, utime, templates? }`
+///
+/// 与 Python 版 v6 .zmb 在 `data/roles/utime` 三个字段上保持兼容（导入用），
+/// `templates` 为 v2.0 新增字段，旧库反序列化时为空。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultData {
     #[serde(rename = "data", default)]
@@ -129,6 +155,9 @@ pub struct VaultData {
     pub roles: Vec<String>,
     #[serde(default)]
     pub utime: i64,
+    /// vault 级账号模板注册表（v2.0+），旧库无此字段，反序列化得到空 Vec
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub templates: Vec<AccountTemplate>,
 }
 
 fn default_roles() -> Vec<String> {
@@ -147,6 +176,7 @@ impl VaultData {
             entries: Vec::new(),
             roles: default_roles(),
             utime: now_ts(),
+            templates: Vec::new(),
         }
     }
 
@@ -215,6 +245,110 @@ impl From<&PasswordEntry> for PasswordSummary {
     }
 }
 
+/// 账号模板字段类型（v2.0 P1 最小集）
+///
+/// 字段表现为字符串 + UI 提示，不在序列化层区分加密。
+/// `Url` / `Email` / `Phone` 仅为 UI 输入提示与点击动作提示，
+/// 底层仍以 `String` 存以便跨项目复用。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TemplateFieldType {
+    Text,
+    Secret,
+    Url,
+    Email,
+    Phone,
+    Multiline,
+    Date,
+}
+
+impl Default for TemplateFieldType {
+    fn default() -> Self {
+        Self::Text
+    }
+}
+
+/// 账号模板中的单个字段定义
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateField {
+    /// 字段 key，在同一模板内唯一；也是 `PasswordEntry.custom_fields` 的 key
+    pub key: String,
+    /// 字段展示名（UI 标题）
+    pub label: String,
+    #[serde(default)]
+    pub field_type: TemplateFieldType,
+    /// 是否必填（仅 UI 提示，不在后端强校，以不阻断导入场景）
+    #[serde(default)]
+    pub required: bool,
+    /// 占位符提示文本
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub placeholder: String,
+}
+
+/// 模板自动匹配规则（预留）：后续用于根据 url/keyword/role 推荐模板
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
+pub enum TemplateMatchRule {
+    /// 域名/子串匹配条目的 url
+    UrlContains(String),
+    /// 名称/描述中包含关键词
+    Keyword(String),
+    /// role 完全匹配
+    Role(String),
+}
+
+/// 账号模板：vault 级资源，序列化于 `VaultData.templates`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountTemplate {
+    /// 模板唯一 id（如 `bank_card` / `social` / `work_internal`），推荐 snake_case
+    pub id: String,
+    /// 模板展示名
+    pub name: String,
+    /// emoji 或图标名（UI 可选渲染）
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon: String,
+    /// 业务字段（顶层内置字段之外的扩展字段定义）
+    #[serde(default)]
+    pub fields: Vec<TemplateField>,
+    /// 匹配规则（可选，预留给后续自动推荐）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub match_rules: Vec<TemplateMatchRule>,
+    /// 创建/修改时间
+    #[serde(default)]
+    pub utime: i64,
+}
+
+impl AccountTemplate {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            icon: String::new(),
+            fields: Vec::new(),
+            match_rules: Vec::new(),
+            utime: now_ts(),
+        }
+    }
+}
+
+/// 扩展字段归一化：去空 key、截断超长、差异量限数量
+pub fn normalize_custom_fields(raw: BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for (k, v) in raw {
+        let k = k.trim();
+        if k.is_empty() {
+            continue;
+        }
+        let key: String = k.chars().take(CUSTOM_FIELD_KEY_MAX).collect();
+        let value: String = v.chars().take(CUSTOM_FIELD_VALUE_MAX).collect();
+        out.insert(key, value);
+        if out.len() >= CUSTOM_FIELDS_MAX_COUNT {
+            break;
+        }
+    }
+    out
+}
+
 /// 前端提交的新增/编辑入参
 #[derive(Debug, Clone, Deserialize)]
 pub struct PasswordInput {
@@ -244,12 +378,22 @@ pub struct PasswordInput {
     pub totp_digits: u8,
     #[serde(default = "default_totp_period")]
     pub totp_period: u32,
+    /// 可选模板 id，空串表示未应用模板
+    #[serde(default)]
+    pub template_id: String,
+    /// 扩展字段（与 PasswordEntry.custom_fields 同构）
+    #[serde(default)]
+    pub custom_fields: BTreeMap<String, String>,
 }
 
 impl Drop for PasswordInput {
     fn drop(&mut self) {
         self.pwd.zeroize();
         self.totp_secret.zeroize();
+        // custom_fields 可能包含敏感信息（身份证/口令卷等），逐项清到字节零值
+        for (_, v) in self.custom_fields.iter_mut() {
+            v.zeroize();
+        }
     }
 }
 
@@ -271,4 +415,90 @@ pub fn normalize_tags(raw: &[String]) -> Vec<String> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 旧库 JSON（无 templates / template_id / custom_fields）仍可反序列化；
+    /// 这保证从P ython 单向导入的 v6/.zmb 数据不需迁移即能加载。
+    #[test]
+    fn legacy_vault_json_loads_without_new_fields() {
+        let legacy = r#"{
+            "data": [
+                { "id": 1700000000, "role": "个人", "name": "某网站", "userID": "alice",
+                  "pwd": "hunter2", "phone": "", "email": "", "url": "", "desc": "",
+                  "utime": 1700000000, "tags": ["社交"] }
+            ],
+            "roles": ["个人", "工作"],
+            "utime": 1700000000
+        }"#;
+        let data: VaultData = serde_json::from_str(legacy).expect("旧库反序列化应成功");
+        assert_eq!(data.entries.len(), 1);
+        assert!(data.templates.is_empty());
+        let e = &data.entries[0];
+        assert_eq!(e.template_id, "");
+        assert!(e.custom_fields.is_empty());
+    }
+
+    /// 含 custom_fields + template_id 的条目应 round-trip 保留
+    #[test]
+    fn entry_with_custom_fields_roundtrip() {
+        let mut e = PasswordEntry::new();
+        e.name = "某银行".into();
+        e.template_id = "bank_card".into();
+        e.custom_fields.insert("card_no".into(), "6217 0000 0000 0000".into());
+        e.custom_fields.insert("exp_date".into(), "12/29".into());
+        let mut data = VaultData::new();
+        data.entries.push(e);
+        data.templates
+            .push(AccountTemplate::new("bank_card", "银行卡"));
+
+        let json = serde_json::to_string(&data).unwrap();
+        let parsed: VaultData = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.entries[0].template_id, "bank_card");
+        assert_eq!(
+            parsed.entries[0].custom_fields.get("card_no").map(|s| s.as_str()),
+            Some("6217 0000 0000 0000")
+        );
+        assert_eq!(parsed.templates.len(), 1);
+        assert_eq!(parsed.templates[0].id, "bank_card");
+    }
+
+    /// 空 custom_fields / templates 应 skip_serializing_if 生效（输出不含该 key）
+    #[test]
+    fn empty_extensions_are_omitted_in_json() {
+        let data = VaultData::new();
+        let json = serde_json::to_string(&data).unwrap();
+        assert!(!json.contains("templates"), "templates 为空时不该出现在 JSON 里");
+        let e = PasswordEntry::new();
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(!json.contains("custom_fields"));
+        assert!(!json.contains("template_id"));
+    }
+
+    /// normalize_custom_fields 应去空 key、截断超长、限制总数
+    #[test]
+    fn normalize_custom_fields_basic() {
+        let mut raw = BTreeMap::new();
+        raw.insert("  ".into(), "v".into()); // 空 key 跳过
+        raw.insert("k".into(), "v".into());
+        let long_key: String = "x".repeat(CUSTOM_FIELD_KEY_MAX + 50);
+        let long_val: String = "y".repeat(CUSTOM_FIELD_VALUE_MAX + 50);
+        raw.insert(long_key, long_val);
+
+        let out = normalize_custom_fields(raw);
+        assert!(out.contains_key("k"));
+        assert!(out.keys().all(|k| !k.is_empty()));
+        let truncated_key_len = out
+            .keys()
+            .map(|k| k.chars().count())
+            .max()
+            .unwrap_or(0);
+        assert!(truncated_key_len <= CUSTOM_FIELD_KEY_MAX);
+        for v in out.values() {
+            assert!(v.chars().count() <= CUSTOM_FIELD_VALUE_MAX);
+        }
+    }
 }
