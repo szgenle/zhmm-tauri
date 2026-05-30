@@ -15,6 +15,7 @@ import TagPickerDialog from "./TagPickerDialog.vue";
 const props = defineProps<{
   show: boolean;
   editEntry: PasswordEntry | null; // null = 新增模式
+  prefillEntry?: PasswordEntry | null; // 仅在新增模式下生效，用于克隆等场景的预填
 }>();
 
 const emit = defineEmits<{
@@ -111,8 +112,9 @@ watch(
   () => props.show,
   (visible) => {
     if (!visible) return;
-    if (props.editEntry) {
-      const e = props.editEntry;
+    const source = props.editEntry || props.prefillEntry || null;
+    if (source) {
+      const e = source;
       form.role = e.role || "个人";
       form.name = e.name || "";
       form.userID = e.userID;

@@ -92,6 +92,7 @@ const filtered = computed<PasswordSummary[]>(() => {
 // 编辑对话框
 const showEditDialog = ref(false);
 const editEntry = ref<PasswordEntry | null>(null);
+const prefillEntry = ref<PasswordEntry | null>(null);
 
 // 历史对话框
 const showHistoryDialog = ref(false);
@@ -116,6 +117,7 @@ const contextMenuOptions = computed(() => {
   opts.push({ key: "d1", type: "divider" });
   opts.push({ label: revealedPasswords.value.has(row.id) ? "隐藏密码" : "显示密码", key: "reveal" });
   opts.push({ label: "编辑", key: "edit" });
+  opts.push({ label: "克隆为新记录", key: "clone" });
   opts.push({ label: "历史密码", key: "history" });
   opts.push({ key: "d2", type: "divider" });
   opts.push({ label: "删除", key: "delete" });
@@ -144,6 +146,7 @@ function handleContextSelect(key: string) {
     case "copy-url": handleCopyUrl(row); break;
     case "reveal": revealPassword(row); break;
     case "edit": openEdit(row); break;
+    case "clone": handleClone(row); break;
     case "open": handleOpenUrl(row); break;
     case "history": openHistory(row); break;
     case "delete": handleDelete(row); break;
@@ -239,12 +242,26 @@ function handleDelete(row: PasswordSummary) {
 
 function openAdd() {
   editEntry.value = null;
+  prefillEntry.value = null;
   showEditDialog.value = true;
 }
 
 async function openEdit(row: PasswordSummary) {
   try {
     editEntry.value = await api.getPassword(row.id);
+    prefillEntry.value = null;
+    showEditDialog.value = true;
+  } catch (e: any) {
+    message.error(`加载失败: ${e}`);
+  }
+}
+
+async function handleClone(row: PasswordSummary) {
+  try {
+    const src = await api.getPassword(row.id);
+    // 克隆场景：作为新增打开（editEntry=null），同时预填各字段供修改
+    editEntry.value = null;
+    prefillEntry.value = src;
     showEditDialog.value = true;
   } catch (e: any) {
     message.error(`加载失败: ${e}`);
@@ -619,6 +636,7 @@ onMounted(async () => {
     <PasswordEditDialog
       :show="showEditDialog"
       :edit-entry="editEntry"
+      :prefill-entry="prefillEntry"
       @update:show="showEditDialog = $event"
       @saved="loadData"
     />
