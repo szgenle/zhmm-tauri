@@ -1,7 +1,7 @@
 {
   "name": "account-jotter",
   "private": true,
-  "version": "2.0.0-alpha.3",
+  "version": "2.0.0-rc.1",
   "description": "账号小本本 · Account Jotter — 小本本系列首作，国密 SM3/SM4 + Argon2id 本地优先账号信息管理器（Tauri + Vue 3 + Rust）。前身 zhmm-tauri，可单向导入 Python 版 .zmb 历史数据。",
   "author": "szgenle",
   "license": "MIT",
