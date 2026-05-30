@@ -56,6 +56,8 @@ pub fn run() {
             commands::upsert_template,
             commands::delete_template,
             commands::seed_default_templates,
+            commands::export_templates_json,
+            commands::import_templates_json,
             commands::create_local_backup,
             commands::list_local_backups,
             commands::delete_local_backup,

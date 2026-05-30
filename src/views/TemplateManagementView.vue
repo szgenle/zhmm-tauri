@@ -18,7 +18,11 @@ import {
   AddOutline,
   TrashOutline,
   ReloadOutline,
+  DownloadOutline,
+  CloudUploadOutline,
+  GlobeOutline,
 } from "@vicons/ionicons5";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type { DataTableColumns } from "naive-ui";
 import {
   api,
@@ -27,6 +31,7 @@ import {
   type TemplateFieldType,
   type TemplateMatchRule,
 } from "../api";
+import { COMMUNITY_PACKS, type CommunityTemplatePack } from "../utils/communityTemplates";
 
 const message = useMessage();
 const dialog = useDialog();
@@ -217,6 +222,106 @@ async function handleSeedDefaults() {
   }
 }
 
+// ========== 导入导出（alpha.3） ==========
+
+async function handleExportAll() {
+  if (templates.value.length === 0) {
+    message.info("当前账号库未配置任何模板");
+    return;
+  }
+  await exportTemplatesToFile(undefined, "templates");
+}
+
+async function handleExportOne(t: AccountTemplate) {
+  await exportTemplatesToFile([t.id], `template-${t.id}`);
+}
+
+/** 双路复用的导出实现：ids 为 undefined 表示全部 */
+async function exportTemplatesToFile(
+  ids: string[] | undefined,
+  defaultStem: string,
+) {
+  try {
+    const path = await saveDialog({
+      title: "导出模板包",
+      defaultPath: `${defaultStem}.json`,
+      filters: [{ name: "模板包 JSON", extensions: ["json"] }],
+    });
+    if (!path) return;
+    const count = await api.exportTemplatesJson(path as string, ids);
+    message.success(`已导出 ${count} 个模板到 ${path}`);
+  } catch (e: any) {
+    message.error(`导出失败: ${e}`);
+  }
+}
+
+async function handleImport() {
+  let path: string | null = null;
+  try {
+    const picked = await openDialog({
+      title: "选择模板包 JSON 文件",
+      multiple: false,
+      filters: [{ name: "模板包 JSON", extensions: ["json"] }],
+    });
+    if (!picked) return;
+    path = Array.isArray(picked) ? picked[0] : picked;
+  } catch (e: any) {
+    message.error(`打开文件失败: ${e}`);
+    return;
+  }
+  if (!path) return;
+  const filePath = path;
+
+  dialog.create({
+    title: "导入模板包",
+    content: "遇到 id 冲突的模板，你希望如何处理？",
+    positiveText: "仅新增（安全）",
+    negativeText: "覆盖现有",
+    onPositiveClick: () => doImport(filePath, false),
+    onNegativeClick: () => doImport(filePath, true),
+  });
+}
+
+async function doImport(path: string, overwrite: boolean) {
+  try {
+    const r = await api.importTemplatesJson(path, overwrite);
+    const parts: string[] = [];
+    if (r.added) parts.push(`新增 ${r.added}`);
+    if (r.updated) parts.push(`覆盖 ${r.updated}`);
+    if (r.skipped) parts.push(`跳过 ${r.skipped}`);
+    if (r.invalid) parts.push(`丢弃 ${r.invalid}`);
+    message.success(`导入完成：${parts.join(" / ") || "无变化"}`);
+    await loadData();
+  } catch (e: any) {
+    message.error(`导入失败: ${e}`);
+  }
+}
+
+// ========== 社区预设包 ==========
+
+const showCommunity = ref(false);
+const communityPacks = ref<CommunityTemplatePack[]>(COMMUNITY_PACKS);
+
+/** 从社区预设包一键安装：逐个 upsert。实现上等价于 overwrite=true */
+async function installCommunityPack(pack: CommunityTemplatePack) {
+  let added = 0;
+  let updated = 0;
+  const existingIds = new Set(templates.value.map((t) => t.id));
+  for (const t of pack.templates) {
+    try {
+      await api.upsertTemplate(t);
+      if (existingIds.has(t.id)) updated++;
+      else added++;
+    } catch (e: any) {
+      message.error(`模板「${t.name}」安装失败: ${e}`);
+    }
+  }
+  message.success(
+    `「${pack.name}」已装入：新增 ${added}、更新 ${updated}（共 ${pack.templates.length}）`,
+  );
+  await loadData();
+}
+
 async function loadData() {
   loading.value = true;
   try {
@@ -311,7 +416,7 @@ const columns: DataTableColumns<AccountTemplate> = [
   {
     title: "操作",
     key: "actions",
-    width: 140,
+    width: 200,
     render(row) {
       return h("div", { style: "display: flex; gap: 6px;" }, [
         h(
@@ -322,6 +427,15 @@ const columns: DataTableColumns<AccountTemplate> = [
             onClick: () => openEdit(row),
           },
           "编辑",
+        ),
+        h(
+          "button",
+          {
+            class: "tpl-act",
+            title: "导出为 JSON 模板包",
+            onClick: () => handleExportOne(row),
+          },
+          "导出",
         ),
         h(
           "button",
@@ -365,6 +479,29 @@ const hasAllBuiltins = computed(() => {
             <n-icon><ReloadOutline /></n-icon>
           </template>
           补装内建模板
+        </n-button>
+        <n-button quaternary @click="showCommunity = true" title="浏览内置的社区预设包">
+          <template #icon>
+            <n-icon><GlobeOutline /></n-icon>
+          </template>
+          社区预设
+        </n-button>
+        <n-button quaternary @click="handleImport" title="从 JSON 模板包导入">
+          <template #icon>
+            <n-icon><CloudUploadOutline /></n-icon>
+          </template>
+          导入
+        </n-button>
+        <n-button
+          quaternary
+          @click="handleExportAll"
+          :disabled="templates.length === 0"
+          title="导出全部模板为 JSON 模板包"
+        >
+          <template #icon>
+            <n-icon><DownloadOutline /></n-icon>
+          </template>
+          导出全部
         </n-button>
         <n-button type="primary" @click="openCreate">
           <template #icon>
@@ -565,6 +702,51 @@ const hasAllBuiltins = computed(() => {
         </n-space>
       </template>
     </n-modal>
+
+    <!-- 社区预设包浏览器 -->
+    <n-modal
+      v-model:show="showCommunity"
+      preset="card"
+      title="社区预设模板包"
+      style="width: 720px"
+    >
+      <div style="font-size:12px;color:var(--n-text-color-3);margin-bottom:12px;line-height:1.6">
+        下面是内置的一组社区预设模板包，点击「装入」会将该包内的模板一次性加入到当前账号库。
+        同 id 模板将被覆盖。
+      </div>
+      <div class="community-list">
+        <div
+          v-for="pack in communityPacks"
+          :key="pack.id"
+          class="community-pack"
+        >
+          <div class="pack-head">
+            <div class="pack-title">
+              <span class="pack-icon">{{ pack.icon }}</span>
+              <span class="pack-name">{{ pack.name }}</span>
+              <span class="pack-count">{{ pack.templates.length }} 个模板</span>
+            </div>
+            <n-button size="small" type="primary" @click="installCommunityPack(pack)">
+              装入
+            </n-button>
+          </div>
+          <div class="pack-desc">{{ pack.description }}</div>
+          <div class="pack-templates">
+            <span
+              v-for="t in pack.templates"
+              :key="t.id"
+              class="pack-tpl-chip"
+              :title="`${t.id} · ${t.fields.length} 字段 · ${(t.match_rules || []).length} 规则`"
+            >{{ t.icon ? t.icon + ' ' : '' }}{{ t.name }}</span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showCommunity = false">关闭</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -665,5 +847,59 @@ const hasAllBuiltins = computed(() => {
 }
 :deep(.tpl-act-del) {
   color: var(--n-color-error, #d03050);
+}
+
+.community-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.community-pack {
+  border: 1px solid var(--app-border-color);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--app-card-bg, transparent);
+}
+.pack-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.pack-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.pack-icon {
+  font-size: 18px;
+}
+.pack-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+.pack-count {
+  font-size: 12px;
+  color: var(--n-text-color-3);
+}
+.pack-desc {
+  font-size: 12px;
+  color: var(--n-text-color-3);
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+.pack-templates {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pack-tpl-chip {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--app-border-color, rgba(0, 0, 0, 0.06));
+  font-size: 12px;
 }
 </style>

@@ -11,7 +11,10 @@ use crate::accounts::{RecentEntry, RecentStore};
 use crate::errors::{AppError, AppResult};
 use crate::io_json;
 use crate::io_xlsx;
-use crate::models::{AccountTemplate, PasswordEntry, PasswordHistoryItem, PasswordInput, PasswordSummary};
+use crate::models::{
+    AccountTemplate, PasswordEntry, PasswordHistoryItem, PasswordInput, PasswordSummary,
+    TemplateImportResult,
+};
 use crate::settings::{AppSettings, SettingsState};
 use crate::site_catalog;
 use crate::totp::{self, OtpAuthParams};
@@ -236,6 +239,24 @@ pub fn delete_template(id: String, state: State<'_, VaultState>) -> AppResult<()
 #[tauri::command]
 pub fn seed_default_templates(state: State<'_, VaultState>) -> AppResult<usize> {
     state.seed_default_templates()
+}
+
+#[tauri::command]
+pub fn export_templates_json(
+    path: String,
+    ids: Option<Vec<String>>,
+    state: State<'_, VaultState>,
+) -> AppResult<usize> {
+    state.export_templates_json(&PathBuf::from(path), ids.as_deref())
+}
+
+#[tauri::command]
+pub fn import_templates_json(
+    path: String,
+    overwrite: bool,
+    state: State<'_, VaultState>,
+) -> AppResult<TemplateImportResult> {
+    state.import_templates_json(&PathBuf::from(path), overwrite)
 }
 
 // ========== 本地备份管理 ==========

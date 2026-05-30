@@ -171,6 +171,27 @@ export const api = {
   seedDefaultTemplates(): Promise<number> {
     return invoke("seed_default_templates");
   },
+  /**
+   * 导出模板为明文 JSON 模板包（v2.0+）。
+   * @param ids 可选。为空/未传表示导出全部模板。
+   * @returns 实际写入的模板数
+   */
+  exportTemplatesJson(path: string, ids?: string[]): Promise<number> {
+    return invoke("export_templates_json", {
+      path,
+      ids: ids && ids.length > 0 ? ids : null,
+    });
+  },
+  /**
+   * 从明文 JSON 模板包导入模板。
+   * @param overwrite false=merge（id 冲突跳过）；true=overwrite（id 冲突覆盖）
+   */
+  importTemplatesJson(
+    path: string,
+    overwrite: boolean,
+  ): Promise<TemplateImportResult> {
+    return invoke("import_templates_json", { path, overwrite });
+  },
   // 本地备份管理
   createLocalBackup(): Promise<string> {
     return invoke("create_local_backup");
@@ -328,6 +349,18 @@ export interface AccountTemplate {
   fields: TemplateField[];
   match_rules?: TemplateMatchRule[];
   utime?: number;
+}
+
+/** 模板包导入结果统计（v2.0+） */
+export interface TemplateImportResult {
+  /** 新增模板数 */
+  added: number;
+  /** 覆盖更新数（仅 overwrite 模式） */
+  updated: number;
+  /** 跳过数（merge 模式下 id 冲突） */
+  skipped: number;
+  /** 被丢弃的非法模板数 */
+  invalid: number;
 }
 
 /**

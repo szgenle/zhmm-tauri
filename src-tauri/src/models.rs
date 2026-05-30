@@ -31,6 +31,12 @@ pub const MATCH_RULES_MAX_COUNT: usize = 32;
 /// match_rules 单条 value 长度上限
 pub const MATCH_RULE_VALUE_MAX: usize = 128;
 
+/// 模板包导入单批最大模板数（防爆）
+pub const TEMPLATE_PACK_MAX_TEMPLATES: usize = 200;
+/// 当前模板包格式标识与 schema 版本
+pub const TEMPLATE_PACK_KIND: &str = "ajot.template-pack.v1";
+pub const TEMPLATE_PACK_SCHEMA_VERSION: u32 = 1;
+
 /// TOTP 算法限制
 #[allow(dead_code)]
 pub const SUPPORTED_TOTP_ALGOS: &[&str] = &["", "SHA1", "SHA256", "SHA512", "SM3"];
@@ -551,6 +557,98 @@ pub fn normalize_match_rules(raw: &[TemplateMatchRule]) -> Vec<TemplateMatchRule
     out
 }
 
+/// 模板包：明文 JSON 数据交换格式（v2.0+）
+///
+/// 用于「模板 .json 导入导出」与社区预设包分享。模板属于结构化定义，
+/// 不含敏感信息，故采用明文 JSON 便于 git 版本管理与人工审阅。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplatePack {
+    /// schema 版本号；当前为 1。后续若有破坏性结构变化将递增并保持兼容读
+    pub schema_version: u32,
+    /// 固定标识符，用于识别此 JSON 是模板包而非其他数据交换格式
+    pub kind: String,
+    /// 导出时的 unix 秒级时间戳
+    #[serde(default)]
+    pub exported_at: i64,
+    /// 模板列表
+    #[serde(default)]
+    pub templates: Vec<AccountTemplate>,
+}
+
+impl TemplatePack {
+    /// 构造一个新的模板包（自动填 schema_version / kind / exported_at）
+    pub fn new(templates: Vec<AccountTemplate>) -> Self {
+        Self {
+            schema_version: TEMPLATE_PACK_SCHEMA_VERSION,
+            kind: TEMPLATE_PACK_KIND.to_string(),
+            exported_at: now_ts(),
+            templates,
+        }
+    }
+}
+
+/// 模板包导入结果统计
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TemplateImportResult {
+    /// 新增模板数（id 在当前 vault 不存在）
+    pub added: usize,
+    /// 覆盖更新数（仅 overwrite 模式下有意义）
+    pub updated: usize,
+    /// 跳过数（merge 模式下因 id 冲突跳过）
+    pub skipped: usize,
+    /// 因结构问题被丢弃的模板数（id/name 非法、字段重复等）
+    pub invalid: usize,
+}
+
+/// 校验并归一化单个待导入模板；返回 None 表示该模板被丢弃
+///
+/// 校验规则与 [crate::vault::VaultState::upsert_template] 对齐，但更宽松：
+/// 不会因为单个模板 invalid 就让整批失败。
+pub fn sanitize_imported_template(mut t: AccountTemplate) -> Option<AccountTemplate> {
+    let id = t.id.trim().to_string();
+    let name = t.name.trim().to_string();
+    if id.is_empty() || name.is_empty() {
+        return None;
+    }
+    // id 仅支持字母、数字、下划线、短横线（与前端校验一致）
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return None;
+    }
+    // 字段 key 去重 + 合法性
+    let mut seen_keys = std::collections::HashSet::<String>::new();
+    let mut fields = Vec::with_capacity(t.fields.len());
+    for mut f in t.fields.into_iter() {
+        let k = f.key.trim().to_string();
+        let lb = f.label.trim().to_string();
+        if k.is_empty() || lb.is_empty() {
+            return None;
+        }
+        if !k
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            return None;
+        }
+        if !seen_keys.insert(k.clone()) {
+            return None;
+        }
+        f.key = k;
+        f.label = lb;
+        f.placeholder = f.placeholder.trim().to_string();
+        fields.push(f);
+    }
+    t.id = id;
+    t.name = name;
+    t.icon = t.icon.trim().to_string();
+    t.fields = fields;
+    t.match_rules = normalize_match_rules(&t.match_rules);
+    t.utime = now_ts();
+    Some(t)
+}
+
 /// 扩展字段归一化：去空 key、截断超长、差异量限数量
 pub fn normalize_custom_fields(raw: BTreeMap<String, String>) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
@@ -743,6 +841,94 @@ mod tests {
             out[0],
             TemplateMatchRule::UrlContains(ref s) if s == "icbc.com.cn"
         ));
+    }
+
+    /// sanitize_imported_template 拒绝非法 id / 重复字段 / 空字段
+    #[test]
+    fn sanitize_imported_template_validation() {
+        // 空 id
+        let mut t = AccountTemplate::new("", "name");
+        assert!(sanitize_imported_template(t.clone()).is_none());
+        // 非法字符
+        t = AccountTemplate::new("bank card", "name"); // 含空格
+        assert!(sanitize_imported_template(t).is_none());
+        // 重复字段 key
+        let dup = AccountTemplate {
+            id: "ok_id".into(),
+            name: "name".into(),
+            icon: String::new(),
+            fields: vec![
+                TemplateField {
+                    key: "k".into(),
+                    label: "a".into(),
+                    field_type: TemplateFieldType::Text,
+                    required: false,
+                    placeholder: String::new(),
+                },
+                TemplateField {
+                    key: "k".into(),
+                    label: "b".into(),
+                    field_type: TemplateFieldType::Text,
+                    required: false,
+                    placeholder: String::new(),
+                },
+            ],
+            match_rules: vec![],
+            utime: 0,
+        };
+        assert!(sanitize_imported_template(dup).is_none());
+    }
+
+    /// sanitize_imported_template trim 并归一化 match_rules
+    #[test]
+    fn sanitize_imported_template_trim_normalize() {
+        let t = AccountTemplate {
+            id: "  good_id  ".into(),
+            name: "  Good Name  ".into(),
+            icon: "  🔑  ".into(),
+            fields: vec![TemplateField {
+                key: "  user  ".into(),
+                label: "  用户名  ".into(),
+                field_type: TemplateFieldType::Text,
+                required: false,
+                placeholder: "  ph  ".into(),
+            }],
+            match_rules: vec![
+                TemplateMatchRule::UrlContains("  example.com  ".into()),
+                TemplateMatchRule::UrlContains("example.com".into()), // 应被去重
+            ],
+            utime: 0,
+        };
+        let out = sanitize_imported_template(t).expect("应该保留");
+        assert_eq!(out.id, "good_id");
+        assert_eq!(out.name, "Good Name");
+        assert_eq!(out.icon, "🔑");
+        assert_eq!(out.fields[0].key, "user");
+        assert_eq!(out.fields[0].label, "用户名");
+        assert_eq!(out.fields[0].placeholder, "ph");
+        assert_eq!(out.match_rules.len(), 1, "重复 url 应被去重");
+    }
+
+    /// TemplatePack 序列化与反序列化循环
+    #[test]
+    fn template_pack_serde_roundtrip() {
+        let mut t = AccountTemplate::new("my_id", "My Name");
+        t.fields.push(TemplateField {
+            key: "k".into(),
+            label: "中文名".into(),
+            field_type: TemplateFieldType::Secret,
+            required: true,
+            placeholder: String::new(),
+        });
+        t.match_rules.push(TemplateMatchRule::UrlContains("foo.com".into()));
+        let pack = TemplatePack::new(vec![t]);
+        let json = serde_json::to_string(&pack).unwrap();
+        let parsed: TemplatePack = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.kind, TEMPLATE_PACK_KIND);
+        assert_eq!(parsed.schema_version, TEMPLATE_PACK_SCHEMA_VERSION);
+        assert_eq!(parsed.templates.len(), 1);
+        assert_eq!(parsed.templates[0].id, "my_id");
+        assert_eq!(parsed.templates[0].fields[0].label, "中文名");
     }
 
     /// normalize_custom_fields 应去空 key、截断超长、限制总数

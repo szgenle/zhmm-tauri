@@ -12,7 +12,9 @@ use crate::crypto::{open as crypto_open, seal as crypto_seal};
 use crate::errors::{AppError, AppResult};
 use crate::models::{
     default_templates, normalize_custom_fields, normalize_match_rules, normalize_tags, now_ts,
-    AccountTemplate, PasswordEntry, PasswordHistoryItem, PasswordInput, VaultData, HISTORY_MAX,
+    sanitize_imported_template, AccountTemplate, PasswordEntry, PasswordHistoryItem,
+    PasswordInput, TemplateImportResult, TemplatePack, VaultData, HISTORY_MAX,
+    TEMPLATE_PACK_KIND, TEMPLATE_PACK_MAX_TEMPLATES,
 };
 
 /// 备份条目元信息（返回给前端）
@@ -224,6 +226,115 @@ impl VaultState {
             self.persist_with_cached()?;
         }
         Ok(added)
+    }
+
+    /// 将当前 vault 的模板（可按 ids 过滤）以明文 JSON 模板包格式写入 path
+    ///
+    /// `ids` 为 None 或空数组：导出全部模板。
+    /// 返回实际写入的模板数。
+    pub fn export_templates_json(&self, path: &Path, ids: Option<&[String]>) -> AppResult<usize> {
+        let templates_to_export = {
+            let guard = self.data.read();
+            let data = guard.as_ref().ok_or(AppError::Locked)?;
+            match ids {
+                Some(ids) if !ids.is_empty() => {
+                    let want: std::collections::HashSet<&str> =
+                        ids.iter().map(|s| s.as_str()).collect();
+                    data.templates
+                        .iter()
+                        .filter(|t| want.contains(t.id.as_str()))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                }
+                _ => data.templates.clone(),
+            }
+        };
+        if templates_to_export.is_empty() {
+            return Err(AppError::Invalid("没有可导出的模板".into()));
+        }
+        let count = templates_to_export.len();
+        let pack = TemplatePack::new(templates_to_export);
+        // pretty-print 便于 git diff / 人工审阅
+        let json = serde_json::to_vec_pretty(&pack)?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, json)?;
+        Ok(count)
+    }
+
+    /// 从明文 JSON 模板包读取模板并合并到当前 vault
+    ///
+    /// `overwrite=false` (merge模式)：id 冲突时保留当前 vault 版本，跳过导入者
+    /// `overwrite=true`  (overwrite模式)：id 冲突时采用导入者覆盖
+    pub fn import_templates_json(
+        &self,
+        path: &Path,
+        overwrite: bool,
+    ) -> AppResult<TemplateImportResult> {
+        if !path.exists() {
+            return Err(AppError::Other(format!("文件不存在: {}", path.display())));
+        }
+        let bytes = fs::read(path)?;
+        let pack: TemplatePack = serde_json::from_slice(&bytes)
+            .map_err(|e| AppError::Invalid(format!("模板包 JSON 解析失败: {e}")))?;
+        if pack.kind != TEMPLATE_PACK_KIND {
+            return Err(AppError::Invalid(format!(
+                "文件格式不是模板包（kind={}）",
+                pack.kind
+            )));
+        }
+        if pack.templates.len() > TEMPLATE_PACK_MAX_TEMPLATES {
+            return Err(AppError::Invalid(format!(
+                "模板包包含 {} 个模板，超过上限 {}",
+                pack.templates.len(),
+                TEMPLATE_PACK_MAX_TEMPLATES
+            )));
+        }
+
+        let mut result = TemplateImportResult::default();
+        // 包内同 id 去重：只保留后出现的一份
+        let mut sanitized_by_id: std::collections::BTreeMap<String, AccountTemplate> =
+            std::collections::BTreeMap::new();
+        for raw in pack.templates.into_iter() {
+            match sanitize_imported_template(raw) {
+                Some(t) => {
+                    sanitized_by_id.insert(t.id.clone(), t);
+                }
+                None => result.invalid += 1,
+            }
+        }
+
+        let mut changed = false;
+        {
+            let mut guard = self.data.write();
+            let data = guard.as_mut().ok_or(AppError::Locked)?;
+            for (_id, t) in sanitized_by_id.into_iter() {
+                let pos = data.templates.iter().position(|x| x.id == t.id);
+                match (pos, overwrite) {
+                    (Some(idx), true) => {
+                        data.templates[idx] = t;
+                        result.updated += 1;
+                        changed = true;
+                    }
+                    (Some(_), false) => {
+                        result.skipped += 1;
+                    }
+                    (None, _) => {
+                        data.templates.push(t);
+                        result.added += 1;
+                        changed = true;
+                    }
+                }
+            }
+            if changed {
+                data.utime = now_ts();
+            }
+        }
+        if changed {
+            self.persist_with_cached()?;
+        }
+        Ok(result)
     }
 
     /// 取完整条目
