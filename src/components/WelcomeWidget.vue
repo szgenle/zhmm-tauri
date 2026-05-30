@@ -13,13 +13,13 @@ const emit = defineEmits<{
     <n-divider style="width: 320px" />
     <p class="info">
       这是一个安全的本地密码管理工具，可以帮助您管理各种账号密码。<br />
-      点击下方按钮开始添加你的第一条密码。
+      点击下方按钮开始添加你的第一个账号。
     </p>
     <n-button type="primary" size="large" @click="emit('add')">
       <template #icon>
         <n-icon><AddOutline /></n-icon>
       </template>
-      添加密码
+      添加账号
     </n-button>
     <n-text depth="3" class="hint">
       数据全部加密保存在本地（SM4-CBC + HMAC-SM3 + Argon2id），不会上传任何服务器。

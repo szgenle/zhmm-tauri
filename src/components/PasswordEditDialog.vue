@@ -261,7 +261,7 @@ function onTagPickerUpdate(next: string[]) {
   <n-modal
     :show="show"
     preset="card"
-    :title="editEntry ? '编辑密码' : '添加密码'"
+    :title="editEntry ? '编辑账号' : '添加账号'"
     style="width: 560px"
     @update:show="emit('update:show', $event)"
   >
