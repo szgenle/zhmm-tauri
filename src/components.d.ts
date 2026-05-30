@@ -63,6 +63,7 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     SiteCatalogDialog: typeof import('./components/SiteCatalogDialog.vue')['default']
     TagManagementDialog: typeof import('./components/TagManagementDialog.vue')['default']
+    TagPickerDialog: typeof import('./components/TagPickerDialog.vue')['default']
     TagSidebar: typeof import('./components/TagSidebar.vue')['default']
     TotpCell: typeof import('./components/TotpCell.vue')['default']
     UnlockDialog: typeof import('./components/UnlockDialog.vue')['default']

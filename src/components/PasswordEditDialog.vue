@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
-import { DiceOutline } from "@vicons/ionicons5";
+import { DiceOutline, PricetagsOutline } from "@vicons/ionicons5";
 import {
   api,
   type PasswordEntry,
@@ -10,6 +10,7 @@ import {
 import PasswordStrengthBar from "./PasswordStrengthBar.vue";
 import RandomPasswordDialog from "./RandomPasswordDialog.vue";
 import AddRoleDialog from "./AddRoleDialog.vue";
+import TagPickerDialog from "./TagPickerDialog.vue";
 
 const props = defineProps<{
   show: boolean;
@@ -59,6 +60,43 @@ const roleOptions = ref<{ label: string; value: string }[]>([
   { label: "其它", value: "其它" },
 ]);
 
+// 标签选择器对话框
+const showTagPicker = ref(false);
+const vaultKey = ref("");
+const RECENT_TAGS_LIMIT = 30;
+
+function recentTagsKey(): string {
+  const k = vaultKey.value || "__default__";
+  return `zhmm:recent-tags:${k}`;
+}
+
+function pushToRecentTags(tags: string[]) {
+  if (!tags || tags.length === 0) return;
+  try {
+    const key = recentTagsKey();
+    const raw = localStorage.getItem(key);
+    let list: string[] = [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        list = parsed.filter((x: unknown): x is string => typeof x === "string");
+      }
+    }
+    // 新使用的提到最前；保留先后顺序
+    for (let i = tags.length - 1; i >= 0; i--) {
+      const t = (tags[i] || "").trim();
+      if (!t) continue;
+      const idx = list.indexOf(t);
+      if (idx >= 0) list.splice(idx, 1);
+      list.unshift(t);
+    }
+    if (list.length > RECENT_TAGS_LIMIT) list.length = RECENT_TAGS_LIMIT;
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {
+    // 忽略 localStorage 错误
+  }
+}
+
 function onAddRoleSuccess(role: string) {
   if (!roleOptions.value.find((o) => o.value === role)) {
     roleOptions.value = [...roleOptions.value, { label: role, value: role }];
@@ -91,6 +129,7 @@ watch(
       resetForm();
     }
     loadRoles();
+    loadVaultKey();
   }
 );
 
@@ -163,6 +202,7 @@ async function handleSave() {
       await api.addPassword(payload);
       message.success("已添加");
     }
+    pushToRecentTags(form.tags);
     emit("update:show", false);
     emit("saved");
   } catch (e: any) {
@@ -201,6 +241,19 @@ async function loadRoles() {
   } catch {
     // 失败时保留默认
   }
+}
+
+async function loadVaultKey() {
+  try {
+    const status = await api.vaultStatus();
+    vaultKey.value = status.current_path || "";
+  } catch {
+    vaultKey.value = "";
+  }
+}
+
+function onTagPickerUpdate(next: string[]) {
+  form.tags = next;
 }
 </script>
 
@@ -256,7 +309,18 @@ async function loadRoles() {
         <n-input v-model:value="form.url" placeholder="https://..." />
       </n-form-item>
       <n-form-item label="标签">
-        <n-dynamic-tags v-model:value="form.tags" />
+        <div style="display: flex; align-items: flex-start; gap: 8px; width: 100%">
+          <n-dynamic-tags v-model:value="form.tags" style="flex: 1" />
+          <n-button
+            size="small"
+            secondary
+            @click="showTagPicker = true"
+            title="从已用标签中选择"
+          >
+            <template #icon><n-icon><PricetagsOutline /></n-icon></template>
+            选择
+          </n-button>
+        </div>
       </n-form-item>
       <n-form-item label="备注">
         <n-input v-model:value="form.desc" type="textarea" :rows="3" />
@@ -325,5 +389,13 @@ async function loadRoles() {
     v-model:show="showAddRoleDialog"
     :existing-roles="roleOptions.map(o => o.value)"
     @success="onAddRoleSuccess"
+  />
+
+  <!-- 标签选择器 -->
+  <TagPickerDialog
+    v-model:show="showTagPicker"
+    :selected-tags="form.tags"
+    :vault-key="vaultKey"
+    @update:selected-tags="onTagPickerUpdate"
   />
 </template>
