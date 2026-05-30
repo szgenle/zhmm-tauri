@@ -11,7 +11,7 @@ use crate::accounts::{RecentEntry, RecentStore};
 use crate::errors::{AppError, AppResult};
 use crate::io_json;
 use crate::io_xlsx;
-use crate::models::{PasswordEntry, PasswordHistoryItem, PasswordInput, PasswordSummary};
+use crate::models::{AccountTemplate, PasswordEntry, PasswordHistoryItem, PasswordInput, PasswordSummary};
 use crate::settings::{AppSettings, SettingsState};
 use crate::site_catalog;
 use crate::totp::{self, OtpAuthParams};
@@ -195,6 +195,31 @@ pub fn update_settings(
 #[tauri::command]
 pub fn list_roles(state: State<'_, VaultState>) -> AppResult<Vec<String>> {
     state.roles()
+}
+
+// ========== 账号模板（v2.0+） ==========
+
+#[tauri::command]
+pub fn list_templates(state: State<'_, VaultState>) -> AppResult<Vec<AccountTemplate>> {
+    state.templates()
+}
+
+#[tauri::command]
+pub fn upsert_template(
+    template: AccountTemplate,
+    state: State<'_, VaultState>,
+) -> AppResult<AccountTemplate> {
+    state.upsert_template(template)
+}
+
+#[tauri::command]
+pub fn delete_template(id: String, state: State<'_, VaultState>) -> AppResult<()> {
+    state.delete_template(&id)
+}
+
+#[tauri::command]
+pub fn seed_default_templates(state: State<'_, VaultState>) -> AppResult<usize> {
+    state.seed_default_templates()
 }
 
 // ========== 本地备份管理 ==========

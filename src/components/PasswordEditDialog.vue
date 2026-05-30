@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
 import { DiceOutline, PricetagsOutline } from "@vicons/ionicons5";
 import {
   api,
+  type AccountTemplate,
   type PasswordEntry,
   type PasswordInput,
 } from "../api";
@@ -40,7 +41,22 @@ const form = reactive<Required<PasswordInput>>({
   totp_algo: "",
   totp_digits: 6,
   totp_period: 30,
+  template_id: "",
+  custom_fields: {} as Record<string, string>,
 });
+
+// 模板状态
+const templates = ref<AccountTemplate[]>([]);
+const templateOptions = computed(() => [
+  { label: "无模板", value: "" },
+  ...templates.value.map((t) => ({
+    label: t.icon ? `${t.icon} ${t.name}` : t.name,
+    value: t.id,
+  })),
+]);
+const currentTemplate = computed<AccountTemplate | null>(() =>
+  templates.value.find((t) => t.id === form.template_id) || null,
+);
 
 // TOTP 区域展开控制
 const totpEnabled = ref(false);
@@ -128,11 +144,14 @@ watch(
       form.totp_algo = e.totp_algo;
       form.totp_digits = e.totp_digits || 6;
       form.totp_period = e.totp_period || 30;
+      form.template_id = e.template_id || "";
+      form.custom_fields = { ...(e.custom_fields || {}) };
       totpEnabled.value = !!e.totp_secret;
     } else {
       resetForm();
     }
     loadRoles();
+    loadTemplates();
     loadVaultKey();
   }
 );
@@ -192,6 +211,8 @@ function resetForm() {
   form.totp_algo = "";
   form.totp_digits = 6;
   form.totp_period = 30;
+  form.template_id = "";
+  form.custom_fields = {};
   otpauthUri.value = "";
   totpEnabled.value = false;
 }
@@ -203,7 +224,21 @@ async function handleSave() {
   }
   editing.value = true;
   try {
-    const payload: PasswordInput = { ...form };
+    // 只传当前模板声明过的 custom_fields key（避免切换模板后还带孤儿字段）
+    const allowedKeys = currentTemplate.value
+      ? new Set(currentTemplate.value.fields.map((f) => f.key))
+      : null;
+    const trimmedCustom: Record<string, string> = {};
+    for (const [k, v] of Object.entries(form.custom_fields || {})) {
+      const val = (v ?? "").toString();
+      if (!val) continue;
+      if (allowedKeys && !allowedKeys.has(k)) continue;
+      trimmedCustom[k] = val;
+    }
+    const payload: PasswordInput = {
+      ...form,
+      custom_fields: trimmedCustom,
+    };
     if (props.editEntry) {
       await api.updatePassword(props.editEntry.id, payload);
       message.success("已更新");
@@ -252,6 +287,14 @@ async function loadRoles() {
   }
 }
 
+async function loadTemplates() {
+  try {
+    templates.value = await api.listTemplates();
+  } catch {
+    templates.value = [];
+  }
+}
+
 async function loadVaultKey() {
   try {
     const status = await api.vaultStatus();
@@ -288,6 +331,13 @@ function onTagPickerUpdate(next: string[]) {
             + 新建
           </n-button>
         </n-input-group>
+      </n-form-item>
+      <n-form-item label="模板">
+        <n-select
+          v-model:value="form.template_id"
+          :options="templateOptions"
+          placeholder="可选：按账号类型附加业务字段"
+        />
       </n-form-item>
       <n-form-item label="名称">
         <n-input v-model:value="form.name" placeholder="例如：微信、招商银行、GitHub" />
@@ -337,6 +387,40 @@ function onTagPickerUpdate(next: string[]) {
       <n-form-item label="备注">
         <n-input v-model:value="form.desc" type="textarea" :rows="3" />
       </n-form-item>
+      <!-- 动态模板字段（v2.0+） -->
+      <template v-if="currentTemplate && currentTemplate.fields.length > 0">
+        <n-divider style="margin: 12px 0 8px">
+          {{ currentTemplate.icon }} {{ currentTemplate.name }} 业务字段
+        </n-divider>
+        <n-form-item
+          v-for="f in currentTemplate.fields"
+          :key="f.key"
+          :label="f.label"
+        >
+          <n-input
+            v-if="f.field_type === 'multiline'"
+            :value="form.custom_fields[f.key] || ''"
+            type="textarea"
+            :rows="3"
+            :placeholder="f.placeholder"
+            @update:value="(v: string) => (form.custom_fields[f.key] = v)"
+          />
+          <n-input
+            v-else-if="f.field_type === 'secret'"
+            :value="form.custom_fields[f.key] || ''"
+            type="password"
+            show-password-on="click"
+            :placeholder="f.placeholder"
+            @update:value="(v: string) => (form.custom_fields[f.key] = v)"
+          />
+          <n-input
+            v-else
+            :value="form.custom_fields[f.key] || ''"
+            :placeholder="f.placeholder"
+            @update:value="(v: string) => (form.custom_fields[f.key] = v)"
+          />
+        </n-form-item>
+      </template>
       <n-divider style="margin: 12px 0 8px">
         <n-checkbox v-model:checked="totpEnabled">两步验证 (TOTP)</n-checkbox>
       </n-divider>

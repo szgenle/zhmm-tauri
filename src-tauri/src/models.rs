@@ -223,6 +223,12 @@ pub struct PasswordSummary {
     /// 当前密码生效时间：history[0].utime 表示上次密码替换的时刻；
     /// 若从未改过密码，则回退到条目创建时间 (id)。
     pub pwd_utime: i64,
+    /// 关联的模板 id（v2.0+），空串=无模板
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub template_id: String,
+    /// 是否含扩展字段（轻量提示，列表层无需返回完整 map）
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub has_custom_fields: bool,
 }
 
 impl From<&PasswordEntry> for PasswordSummary {
@@ -241,6 +247,8 @@ impl From<&PasswordEntry> for PasswordSummary {
             has_totp: !e.totp_secret.is_empty(),
             utime: e.utime,
             pwd_utime,
+            template_id: e.template_id.clone(),
+            has_custom_fields: !e.custom_fields.is_empty(),
         }
     }
 }
@@ -329,6 +337,145 @@ impl AccountTemplate {
             utime: now_ts(),
         }
     }
+}
+
+/// 内建账号模板种子（v2.0 P1 起步集）
+///
+/// 设计原则：
+/// - 不重复内置字段（不再为模板加 url/email/phone 这种已经有的）
+/// - 字段尽可能少，先把"形"立起来，让用户用起来再扩
+/// - icon 用 emoji，UI 不需要图标资产
+pub fn default_templates() -> Vec<AccountTemplate> {
+    let now = now_ts();
+    vec![
+        AccountTemplate {
+            id: "bank_card".into(),
+            name: "银行卡".into(),
+            icon: "💳".into(),
+            fields: vec![
+                TemplateField {
+                    key: "card_no".into(),
+                    label: "卡号".into(),
+                    field_type: TemplateFieldType::Secret,
+                    required: true,
+                    placeholder: "16~19 位卡号".into(),
+                },
+                TemplateField {
+                    key: "expiry".into(),
+                    label: "有效期".into(),
+                    field_type: TemplateFieldType::Text,
+                    required: false,
+                    placeholder: "MM/YY".into(),
+                },
+                TemplateField {
+                    key: "cvv".into(),
+                    label: "CVV".into(),
+                    field_type: TemplateFieldType::Secret,
+                    required: false,
+                    placeholder: "卡背 3 位".into(),
+                },
+                TemplateField {
+                    key: "bank".into(),
+                    label: "开户行".into(),
+                    field_type: TemplateFieldType::Text,
+                    required: false,
+                    placeholder: String::new(),
+                },
+            ],
+            match_rules: Vec::new(),
+            utime: now,
+        },
+        AccountTemplate {
+            id: "id_card".into(),
+            name: "证件".into(),
+            icon: "🪪".into(),
+            fields: vec![
+                TemplateField {
+                    key: "id_type".into(),
+                    label: "证件类型".into(),
+                    field_type: TemplateFieldType::Text,
+                    required: false,
+                    placeholder: "身份证 / 护照 / 驾照…".into(),
+                },
+                TemplateField {
+                    key: "id_number".into(),
+                    label: "证件号".into(),
+                    field_type: TemplateFieldType::Secret,
+                    required: true,
+                    placeholder: String::new(),
+                },
+                TemplateField {
+                    key: "valid_until".into(),
+                    label: "有效期至".into(),
+                    field_type: TemplateFieldType::Date,
+                    required: false,
+                    placeholder: "YYYY-MM-DD".into(),
+                },
+            ],
+            match_rules: Vec::new(),
+            utime: now,
+        },
+        AccountTemplate {
+            id: "work_internal".into(),
+            name: "工作内网".into(),
+            icon: "💼".into(),
+            fields: vec![
+                TemplateField {
+                    key: "employee_id".into(),
+                    label: "工号".into(),
+                    field_type: TemplateFieldType::Text,
+                    required: false,
+                    placeholder: String::new(),
+                },
+                TemplateField {
+                    key: "vpn".into(),
+                    label: "VPN 地址".into(),
+                    field_type: TemplateFieldType::Url,
+                    required: false,
+                    placeholder: String::new(),
+                },
+                TemplateField {
+                    key: "department".into(),
+                    label: "部门".into(),
+                    field_type: TemplateFieldType::Text,
+                    required: false,
+                    placeholder: String::new(),
+                },
+            ],
+            match_rules: Vec::new(),
+            utime: now,
+        },
+        AccountTemplate {
+            id: "game".into(),
+            name: "游戏".into(),
+            icon: "🎮".into(),
+            fields: vec![
+                TemplateField {
+                    key: "server".into(),
+                    label: "服务器/区服".into(),
+                    field_type: TemplateFieldType::Text,
+                    required: false,
+                    placeholder: String::new(),
+                },
+                TemplateField {
+                    key: "char_name".into(),
+                    label: "角色名".into(),
+                    field_type: TemplateFieldType::Text,
+                    required: false,
+                    placeholder: String::new(),
+                },
+                TemplateField {
+                    key: "uid".into(),
+                    label: "UID".into(),
+                    field_type: TemplateFieldType::Text,
+                    required: false,
+                    placeholder: String::new(),
+                },
+            ],
+            match_rules: Vec::new(),
+            utime: now,
+        },
+    ]
 }
 
 /// 扩展字段归一化：去空 key、截断超长、差异量限数量

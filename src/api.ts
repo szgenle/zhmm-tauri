@@ -32,6 +32,10 @@ export interface PasswordSummary {
   utime: number;
   /** 当前密码生效时间；后端从 history[0].utime 或 id 派生 */
   pwd_utime: number;
+  /** 关联的模板 id（v2.0+），空串=无模板 */
+  template_id?: string;
+  /** 是否含扩展字段（v2.0+） */
+  has_custom_fields?: boolean;
 }
 
 export interface PasswordEntry {
@@ -52,6 +56,10 @@ export interface PasswordEntry {
   totp_period: number;
   history: PasswordHistoryItem[];
   utime: number;
+  /** 关联的模板 id（v2.0+） */
+  template_id?: string;
+  /** 扩展字段（v2.0+）；后端默认 BTreeMap<String,String> ，前端以普通对象收发 */
+  custom_fields?: Record<string, string>;
 }
 
 export interface PasswordInput {
@@ -68,6 +76,10 @@ export interface PasswordInput {
   totp_algo?: string;
   totp_digits?: number;
   totp_period?: number;
+  /** 关联的模板 id（v2.0+），空串/未传=无模板 */
+  template_id?: string;
+  /** 扩展字段（v2.0+）；key 为模板 field.key */
+  custom_fields?: Record<string, string>;
 }
 
 export interface RecentEntry {
@@ -134,6 +146,19 @@ export const api = {
   },
   listRoles(): Promise<string[]> {
     return invoke("list_roles");
+  },
+  // 账号模板（v2.0+）
+  listTemplates(): Promise<AccountTemplate[]> {
+    return invoke("list_templates");
+  },
+  upsertTemplate(template: AccountTemplate): Promise<AccountTemplate> {
+    return invoke("upsert_template", { template });
+  },
+  deleteTemplate(id: string): Promise<void> {
+    return invoke("delete_template", { id });
+  },
+  seedDefaultTemplates(): Promise<number> {
+    return invoke("seed_default_templates");
   },
   // 本地备份管理
   createLocalBackup(): Promise<string> {
@@ -259,6 +284,39 @@ export interface SiteSuggestion {
   name: string;
   tags: string[];
   matched: string;
+}
+
+// ========== 账号模板（v2.0+） ==========
+
+export type TemplateFieldType =
+  | "text"
+  | "secret"
+  | "url"
+  | "email"
+  | "phone"
+  | "multiline"
+  | "date";
+
+export interface TemplateField {
+  key: string;
+  label: string;
+  field_type?: TemplateFieldType;
+  required?: boolean;
+  placeholder?: string;
+}
+
+export type TemplateMatchRule =
+  | { kind: "url_contains"; value: string }
+  | { kind: "keyword"; value: string }
+  | { kind: "role"; value: string };
+
+export interface AccountTemplate {
+  id: string;
+  name: string;
+  icon?: string;
+  fields: TemplateField[];
+  match_rules?: TemplateMatchRule[];
+  utime?: number;
 }
 
 /**
