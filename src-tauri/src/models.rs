@@ -203,6 +203,21 @@ impl VaultData {
                 existing.insert(e.role.clone());
             }
         }
+
+        // v2.0.0-rc.2：内建模板的 match_rules 在 alpha.2 才引入；
+        // 老 vault（v0.x / v2.0.0-alpha.0/1）解锁后内建模板 match_rules 仍为空，
+        // 导致编辑账号时模板自动推荐永远不触发。这里幂等补齐：
+        //   - 仅当某内建 id 模板的 match_rules 为空时，从最新 default_templates 复制
+        //   - 用户已自定义过 match_rules 的不动
+        //   - 仅修改内存中的 data，不强制写盘（下次任意 mutate 时自然落盘）
+        let builtins = default_templates();
+        for d in builtins {
+            if let Some(t) = self.templates.iter_mut().find(|t| t.id == d.id) {
+                if t.match_rules.is_empty() && !d.match_rules.is_empty() {
+                    t.match_rules = d.match_rules;
+                }
+            }
+        }
     }
 
     /// 生成一个不与现有条目冲突的 id（秒级时间戳，撞了就 +1）
@@ -953,5 +968,54 @@ mod tests {
         for v in out.values() {
             assert!(v.chars().count() <= CUSTOM_FIELD_VALUE_MAX);
         }
+    }
+
+    /// rc.2 hotfix：老 vault 中内建模板 match_rules 为空时，upgrade() 应从 default_templates 补齐
+    #[test]
+    fn upgrade_fills_missing_builtin_match_rules() {
+        let mut data = VaultData::new();
+        // 模拟老版本创建的 vault：有内建 id 但 match_rules 为空
+        data.templates.push(AccountTemplate {
+            id: "bank_card".into(),
+            name: "银行卡".into(),
+            icon: "💳".into(),
+            fields: vec![],
+            match_rules: vec![],
+            utime: 0,
+        });
+        data.upgrade();
+        let bank = data.templates.iter().find(|t| t.id == "bank_card").unwrap();
+        assert!(
+            !bank.match_rules.is_empty(),
+            "老 vault 的内建银行卡模板 match_rules 应被 upgrade 补齐"
+        );
+        assert!(
+            bank.match_rules
+                .iter()
+                .any(|r| matches!(r, TemplateMatchRule::UrlContains(s) if s.contains("icbc"))),
+            "补齐后应包含 icbc 域名规则"
+        );
+    }
+
+    /// upgrade() 不应覆盖用户已自定义过的 match_rules
+    #[test]
+    fn upgrade_keeps_user_customized_match_rules() {
+        let mut data = VaultData::new();
+        let custom_rule = TemplateMatchRule::UrlContains("my-private-bank.local".into());
+        data.templates.push(AccountTemplate {
+            id: "bank_card".into(),
+            name: "银行卡".into(),
+            icon: "💳".into(),
+            fields: vec![],
+            match_rules: vec![custom_rule.clone()],
+            utime: 0,
+        });
+        data.upgrade();
+        let bank = data.templates.iter().find(|t| t.id == "bank_card").unwrap();
+        assert_eq!(bank.match_rules.len(), 1, "用户已自定义 match_rules 不应被 upgrade 覆盖或追加");
+        assert!(matches!(
+            bank.match_rules[0],
+            TemplateMatchRule::UrlContains(ref s) if s == "my-private-bank.local"
+        ));
     }
 }
