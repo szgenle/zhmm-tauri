@@ -1,8 +1,8 @@
-<h1 align="center">🔐 zhmm-tauri</h1>
+<h1 align="center">📒 账号小本本 · Account Jotter</h1>
 
 <p align="center">
-  基于 <b>国密算法（SM3 / SM4）</b> 的本地优先账号密码管理器（Tauri + Vue 3 + Rust 实现）<br/>
-  与 <a href="https://github.com/szgenle/zhmm">Python 版 zhmm</a> 共享同一套 <code>.zmb</code> 密库格式，可双向打开互通。
+  <b>小本本系列 / Jotter Series</b> 首作 · <b>国密算法（SM3 / SM4）</b> 本地优先账号信息管理器<br/>
+  Tauri + Vue 3 + Rust 实现 · 前身 <a href="https://github.com/szgenle/zhmm">Python 版 zhmm</a> 的跨平台桌面重构版，现阶段可单向导入 <code>.zmb</code> 历史数据。
 </p>
 
 <p align="center">
@@ -16,9 +16,15 @@
 
 ---
 
+## 📌 项目现状
+
+> **v2.0.0-alpha** 品牌重塑进行中：仓库名 `zhmm-tauri` 仍作为代码宿主，面向用户的产品名已升级为 **账号小本本 · Account Jotter**，系于后续 **小本本系列**（账号 / 记账 / 灵感 / …）的首作。
+>
+> 历史名称 *zhmm-tauri* 的定位：与 Python 版 zhmm 互通的双向密库客户端。新阶段走“**超集**”路线，Python 版不再跟进，v2 只保证对 `.zmb` 的单向导入能力。
+
 ## 📖 关于本项目
 
-`zhmm-tauri` 是 [zhmm](https://github.com/szgenle/zhmm)（PyQt6 实现）的 **跨平台桌面客户端重构版**：
+**账号小本本 · Account Jotter** 是 [zhmm](https://github.com/szgenle/zhmm)（PyQt6 实现）的 **跨平台桌面重构版**：
 
 - 🦀 **后端**：Rust + Tauri 2.x，加密/序列化/IO 在原生层完成，体积小、启动快
 - 🖼 **前端**：Vue 3 + TypeScript + Naive UI，组件化页面 + 自定义主题

@@ -1,9 +1,10 @@
-.PHONY: help install dev dev-fe build build-debug clean clean-fe clean-rs clean-all fmt fmt-rs lint lint-rs test check env-info cli cli-install cli-uninstall cli-help
+.PHONY: help install dev dev-fe build build-debug clean clean-fe clean-rs clean-all fmt fmt-rs lint lint-rs test check env-info cli cli-install cli-uninstall cli-help accjot accjot-install accjot-uninstall
 
 # CLI 安装位置（可覆盖：make cli-install CLI_PREFIX=/usr/local）
 CLI_PREFIX ?= $(HOME)/.local
 CLI_BIN_DIR := $(CLI_PREFIX)/bin
 CLI_BIN := $(CLI_BIN_DIR)/zhmm-cli
+CLI_BIN_ACCJOT := $(CLI_BIN_DIR)/accjot
 
 # 默认目标：显示帮助信息
 help:
@@ -29,6 +30,10 @@ help:
 	@echo "  make cli-install   - 构建并安装到 ~/.local/bin（可改 CLI_PREFIX）"
 	@echo "  make cli-uninstall - 卸载 zhmm-cli"
 	@echo "  make cli-help      - 打印 zhmm-cli 速查卡（不用记子命令）"
+	@echo "  ----- Account Jotter 别名（同一个二进制，面向未来） -----"
+	@echo "  make accjot           - 构建 accjot release 二进制（= zhmm-cli）"
+	@echo "  make accjot-install   - 同时安装 accjot 与 zhmm-cli两个名字"
+	@echo "  make accjot-uninstall - 卸载 accjot 二进制"
 
 
 # 安装所有依赖
@@ -151,7 +156,9 @@ cli-uninstall:
 
 # 速查卡（不用记子命令，直接 make cli-help）
 cli-help:
-	@echo "================ zhmm-cli 速查卡 ================"
+	@echo "================ zhmm-cli / accjot 速查卡 ================"
+	@echo "账号小本本 · Account Jotter — 命令行版"
+	@echo "两个名字任选：zhmm-cli （历史别名）· accjot （系列品牌名）"
 	@echo "通用：每条命令都需要 -f <密库.zmb> -a <账号>"
 	@echo "  推荐先 export ZHMM_FILE=~/Documents/my.zmb ZHMM_ACCOUNT=ws"
 	@echo "  之后所有命令都可省略 -f / -a；密码用 -p 或 ZHMM_PASSWORD"
@@ -180,4 +187,29 @@ cli-help:
 	@echo "  zhmm-cli import-xlsx in.xlsx"
 	@echo ""
 	@echo "忘了某个子命令的细节？跑：zhmm-cli help <子命令>"
-	@echo "=================================================="
+	@echo "================================================="
+
+# ============== Account Jotter 品牌别名 ==============
+# 这些目标与 cli/cli-install/cli-uninstall 完全等价，
+# 只是同时安装/卸载 accjot 这个新名字的二进制，便于过渡。
+
+accjot:
+	@echo "构建 accjot release 二进制（= zhmm-cli）..."
+	cd src-tauri && cargo build --release --bin accjot
+	@echo ""
+	@echo "✓ 构建完成：src-tauri/target/release/accjot"
+	@echo "  下一步：make accjot-install  同时装上 accjot 与 zhmm-cli"
+
+accjot-install: cli accjot
+	@mkdir -p "$(CLI_BIN_DIR)"
+	@cp src-tauri/target/release/zhmm-cli "$(CLI_BIN)"
+	@cp src-tauri/target/release/accjot   "$(CLI_BIN_ACCJOT)"
+	@echo "✓ 已安装：$(CLI_BIN)"
+	@echo "✓ 已安装：$(CLI_BIN_ACCJOT)"
+	@case ":$$PATH:" in *":$(CLI_BIN_DIR):"*) ;; *) echo "⚠ 提醒：$(CLI_BIN_DIR) 不在 PATH 中，请把以下行加入 ~/.zshrc："; echo "  export PATH=\"$(CLI_BIN_DIR):\$$PATH\"";; esac
+	@echo ""
+	@echo "试一下：accjot --help（或 zhmm-cli --help，二者等价）"
+
+accjot-uninstall:
+	@rm -f "$(CLI_BIN_ACCJOT)"
+	@echo "✓ 已卸载：$(CLI_BIN_ACCJOT)"

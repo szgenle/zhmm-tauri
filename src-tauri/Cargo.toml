@@ -1,7 +1,7 @@
 [package]
 name = "zhmm-tauri"
-version = "0.3.0"
-description = "基于国密算法 SM3/SM4 的本地优先密码管理器（Tauri + Vue 3 + Rust），与 Python 版 zhmm 共享 .zmb 密库格式"
+version = "2.0.0-alpha.0"
+description = "账号小本本 · Account Jotter — 小本本系列首作，国密 SM3/SM4 + Argon2id 本地优先账号信息管理器（Tauri + Vue 3 + Rust）。前身 zhmm-tauri。"
 authors = ["szgenle"]
 edition = "2021"
 license = "MIT"
@@ -25,6 +25,11 @@ path = "src/main.rs"
 
 [[bin]]
 name = "zhmm-cli"
+path = "src/bin/zhmm_cli.rs"
+
+# 系列品牌别名：accjot 与 zhmm-cli 完全等价，便于 Account Jotter 时代过渡
+[[bin]]
+name = "accjot"
 path = "src/bin/zhmm_cli.rs"
 
 [build-dependencies]
