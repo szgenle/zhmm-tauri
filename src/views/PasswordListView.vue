@@ -35,8 +35,14 @@ const data = ref<PasswordSummary[]>([]);
 const loading = ref(false);
 const selectedTags = ref<string[]>([]);
 
-// 模板查询表：id -> { name, icon }。仅用于列表 chip 展示
-const templateMap = ref<Record<string, { name: string; icon: string }>>({});
+// 模板查询表：id -> AccountTemplate。列表 chip 与展开行字段渲染共享
+const templateMap = ref<Record<string, AccountTemplate>>({});
+
+// 行展开详情缓存：仅在用户点击展开时按需 getPassword(id) 拉取并解密 custom_fields，
+// 避免一次性解密全部记录；行被编辑/删除时同步失效。
+const expandedDetails = ref<Record<number, PasswordEntry>>({});
+// secret 字段显隐切换：key 形如 `${id}:${fieldKey}`
+const expandedSecretReveal = ref<Record<string, boolean>>({});
 
 /** 从当前数据中提取所有分类，用于下拉选项 */
 const roleOptions = computed(() => {
@@ -235,6 +241,7 @@ function handleDelete(row: PasswordSummary) {
     onPositiveClick: async () => {
       try {
         await api.deletePassword(row.id);
+        invalidateDetail(row.id);
         message.success("已删除");
         loadData();
       } catch (e: any) {
@@ -292,14 +299,142 @@ async function loadData() {
 async function loadTemplates() {
   try {
     const list: AccountTemplate[] = await api.listTemplates();
-    const m: Record<string, { name: string; icon: string }> = {};
-    for (const t of list) {
-      m[t.id] = { name: t.name, icon: t.icon || "" };
-    }
+    const m: Record<string, AccountTemplate> = {};
+    for (const t of list) m[t.id] = t;
     templateMap.value = m;
   } catch {
     // 静默失败：老库或未解锁场景允许为空
   }
+}
+
+async function fetchDetail(id: number) {
+  if (expandedDetails.value[id]) return;
+  try {
+    const entry = await api.getPassword(id);
+    expandedDetails.value = { ...expandedDetails.value, [id]: entry };
+  } catch (e: any) {
+    message.error(`加载详情失败: ${e}`);
+  }
+}
+
+function invalidateDetail(id: number) {
+  if (id in expandedDetails.value) {
+    const next = { ...expandedDetails.value };
+    delete next[id];
+    expandedDetails.value = next;
+  }
+  const prefix = `${id}:`;
+  const next: Record<string, boolean> = {};
+  let touched = false;
+  for (const k of Object.keys(expandedSecretReveal.value)) {
+    if (k.startsWith(prefix)) { touched = true; continue; }
+    next[k] = expandedSecretReveal.value[k];
+  }
+  if (touched) expandedSecretReveal.value = next;
+}
+
+function clearAllDetailCache() {
+  expandedDetails.value = {};
+  expandedSecretReveal.value = {};
+}
+
+async function copyExpandValue(value: string, isSecret: boolean) {
+  try {
+    if (isSecret) await copyAndScheduleClear(value);
+    else await writeText(value);
+    message.success(isSecret ? "已复制（剪贴板将自动清空）" : "已复制");
+  } catch (e: any) {
+    message.error(`复制失败: ${e}`);
+  }
+}
+
+function renderExpand(row: PasswordSummary) {
+  const detail = expandedDetails.value[row.id];
+  if (!detail) {
+    fetchDetail(row.id);
+    return h("div", { class: "expand-empty" }, "加载中…");
+  }
+  const cf = detail.custom_fields || {};
+  const tpl = row.template_id ? templateMap.value[row.template_id] : null;
+  const defByKey = new Map<string, { label: string; field_type?: string }>();
+  if (tpl) {
+    for (const f of tpl.fields) {
+      defByKey.set(f.key, { label: f.label, field_type: f.field_type });
+    }
+  }
+  // 排序：先按模板字段顺序输出已有值，再追加未在模板中定义的孤儿字段
+  const ordered: Array<[string, string]> = [];
+  if (tpl) {
+    for (const f of tpl.fields) {
+      const v = cf[f.key];
+      if (v) ordered.push([f.key, v]);
+    }
+    for (const [k, v] of Object.entries(cf)) {
+      if (!defByKey.has(k) && v) ordered.push([k, v]);
+    }
+  } else {
+    for (const [k, v] of Object.entries(cf)) {
+      if (v) ordered.push([k, v]);
+    }
+  }
+  if (ordered.length === 0) {
+    return h("div", { class: "expand-empty" }, "该记录暂无扩展字段");
+  }
+  return h(
+    "div",
+    { class: "expand-fields" },
+    ordered.map(([k, v]) => {
+      const def = defByKey.get(k);
+      const label = def?.label || k;
+      const isSecret = def?.field_type === "secret";
+      const isMultiline = def?.field_type === "multiline" || v.includes("\n");
+      const revealKey = `${row.id}:${k}`;
+      const revealed = !!expandedSecretReveal.value[revealKey];
+      const display = isSecret && !revealed ? "••••••••" : v;
+      return h("div", { class: "expand-field-row", key: k }, [
+        h("div", { class: "field-label" }, label),
+        h(
+          "div",
+          {
+            class:
+              "field-value" +
+              (isSecret && !revealed ? " field-value-mask" : "") +
+              (isMultiline ? " field-value-multiline" : ""),
+          },
+          display
+        ),
+        h("div", { class: "field-actions" }, [
+          ...(isSecret
+            ? [
+                h(
+                  NButton,
+                  {
+                    size: "tiny",
+                    quaternary: true,
+                    onClick: () => {
+                      expandedSecretReveal.value = {
+                        ...expandedSecretReveal.value,
+                        [revealKey]: !revealed,
+                      };
+                    },
+                  },
+                  { default: () => (revealed ? "隐藏" : "显示") }
+                ),
+              ]
+            : []),
+          h(
+            NButton,
+            {
+              size: "tiny",
+              quaternary: true,
+              onClick: () => copyExpandValue(v, isSecret),
+            },
+            { default: () => "复制" }
+          ),
+        ]),
+      ]);
+    })
+  );
 }
 
 // --- 列可见性配置 ---
@@ -418,6 +553,12 @@ function toggleColumn(key: string) {
 // --- 表格列定义 ---
 
 const allColumns: DataTableColumns<PasswordSummary> = [
+  // 仅当存在扩展字段时显示展开按钮；展开内容由 renderExpand 按需异步加载
+  {
+    type: "expand",
+    expandable: (row) => !!row.has_custom_fields,
+    renderExpand,
+  },
   { title: "分类", key: "role", width: 80 },
   {
     title: "名称",
@@ -576,7 +717,10 @@ const allColumns: DataTableColumns<PasswordSummary> = [
 ];
 
 const columns = computed<DataTableColumns<PasswordSummary>>(() => {
-  return allColumns.filter((col: any) => visibleColumnKeys.value.includes(col.key));
+  // expand 列始终保留；其他列按用户偏好过滤
+  return allColumns.filter(
+    (col: any) => col.type === "expand" || visibleColumnKeys.value.includes(col.key),
+  );
 });
 
 const searchInputRef = ref<InstanceType<typeof NInput> | null>(null);
@@ -678,7 +822,7 @@ onMounted(async () => {
       :edit-entry="editEntry"
       :prefill-entry="prefillEntry"
       @update:show="showEditDialog = $event"
-      @saved="loadData"
+      @saved="() => { clearAllDetailCache(); loadData(); }"
     />
 
     <!-- 历史密码对话框 -->
@@ -758,5 +902,55 @@ onMounted(async () => {
 }
 .username-copy:hover .username-copy-icon {
   opacity: 1;
+}
+/* 行展开：扩展字段列表 */
+.expand-fields {
+  padding: 8px 16px 10px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.expand-field-row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background-color 0.15s;
+}
+.expand-field-row:hover {
+  background: var(--n-action-color, rgba(0, 0, 0, 0.04));
+}
+.field-label {
+  font-size: 12px;
+  color: var(--n-text-color-3);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.field-value {
+  font-size: 13px;
+  color: var(--n-text-color-1);
+  word-break: break-all;
+}
+.field-value-mask {
+  font-family: monospace;
+  letter-spacing: 2px;
+  color: var(--n-text-color-2);
+}
+.field-value-multiline {
+  white-space: pre-wrap;
+}
+.field-actions {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.expand-empty {
+  padding: 8px 16px 10px 48px;
+  font-size: 13px;
+  color: var(--n-text-color-3);
 }
 </style>
