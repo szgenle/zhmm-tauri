@@ -288,7 +288,11 @@ const allColumnConfigs: ColumnConfig[] = [
   { key: "actions", label: "操作", fixed: true },
 ];
 
-const STORAGE_KEY = "zhmm_visible_columns_v4";
+// v5 起按标签分别记忆列配置：Record<tagKey, string[]>
+// 特殊 key __default__：未选标签或多选标签时使用的全局默认
+const STORAGE_KEY = "zhmm_visible_columns_v5";
+const LEGACY_KEY_V4 = "zhmm_visible_columns_v4";
+const DEFAULT_TAG_KEY = "__default__";
 
 // 默认勾选：分类、账号(fixed)、网址、邮箱、手机、标签、备注、操作(fixed)
 // 2FA 和 密码更新时间 默认隐藏
@@ -296,29 +300,54 @@ const DEFAULT_VISIBLE_KEYS = [
   "role", "userID", "url", "email", "phone", "desc", "actions",
 ];
 
-function loadVisibleColumns(): string[] {
+function loadColumnPrefs(): Record<string, string[]> {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      const arr = JSON.parse(stored);
-      if (Array.isArray(arr) && arr.length > 0) return arr;
+      const obj = JSON.parse(stored);
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) return obj;
     }
   } catch {}
-  return [...DEFAULT_VISIBLE_KEYS];
+  // 迁移：把旧 v4 数组作为全局默认
+  try {
+    const legacy = localStorage.getItem(LEGACY_KEY_V4);
+    if (legacy) {
+      const arr = JSON.parse(legacy);
+      if (Array.isArray(arr) && arr.length > 0) {
+        return { [DEFAULT_TAG_KEY]: arr };
+      }
+    }
+  } catch {}
+  return {};
 }
 
-const visibleColumnKeys = ref<string[]>(loadVisibleColumns());
+const columnPrefs = ref<Record<string, string[]>>(loadColumnPrefs());
+
+// 当前作用的存储 key：仅单选一个标签时使用该标签名，否则用全局默认
+const currentColumnKey = computed(() =>
+  selectedTags.value.length === 1 ? selectedTags.value[0] : DEFAULT_TAG_KEY
+);
+
+const visibleColumnKeys = computed<string[]>(() => {
+  const key = currentColumnKey.value;
+  const own = columnPrefs.value[key];
+  if (own && own.length > 0) return own;
+  // 单标签无独立配置时，回退到全局默认
+  const fallback = columnPrefs.value[DEFAULT_TAG_KEY];
+  if (fallback && fallback.length > 0) return fallback;
+  return [...DEFAULT_VISIBLE_KEYS];
+});
 
 function toggleColumn(key: string) {
   const cfg = allColumnConfigs.find((c) => c.key === key);
   if (cfg?.fixed) return;
-  const idx = visibleColumnKeys.value.indexOf(key);
-  if (idx >= 0) {
-    visibleColumnKeys.value.splice(idx, 1);
-  } else {
-    visibleColumnKeys.value.push(key);
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(visibleColumnKeys.value));
+  const tagKey = currentColumnKey.value;
+  const cur = [...visibleColumnKeys.value];
+  const idx = cur.indexOf(key);
+  if (idx >= 0) cur.splice(idx, 1);
+  else cur.push(key);
+  columnPrefs.value = { ...columnPrefs.value, [tagKey]: cur };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(columnPrefs.value));
 }
 
 // --- 表格列定义 ---
@@ -495,7 +524,10 @@ onMounted(async () => {
               </template>
             </n-button>
           </template>
-          <div style="min-width: 120px">
+          <div style="min-width: 160px">
+            <div style="font-size: 12px; color: var(--n-text-color-3); padding: 0 0 6px; border-bottom: 1px solid var(--n-border-color); margin-bottom: 6px;">
+              {{ currentColumnKey === DEFAULT_TAG_KEY ? '全局默认' : `标签：${currentColumnKey}` }}
+            </div>
             <div v-for="cfg in allColumnConfigs" :key="cfg.key" style="padding: 4px 0">
               <n-checkbox
                 :checked="visibleColumnKeys.includes(cfg.key)"
