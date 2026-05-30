@@ -126,14 +126,25 @@ export const api = {
   parseOtpauth(uri: string): Promise<OtpAuthParams> {
     return invoke("parse_otpauth", { uri });
   },
-  exportXlsx(path: string): Promise<void> {
-    return invoke("export_xlsx", { path });
+  /**
+   * 导出当前密码库为 xlsx（明文落盘）。
+   * 后端会先验证 `masterPassword`，错误会以 "主密码错误" 报错。
+   */
+  exportXlsx(path: string, masterPassword: string): Promise<void> {
+    return invoke("export_xlsx", { path, masterPassword });
   },
   importXlsx(path: string): Promise<number> {
     return invoke("import_xlsx", { path });
   },
-  backupToFile(path: string, backupPassword: string): Promise<void> {
-    return invoke("backup_to_file", { path, backupPassword });
+  /**
+   * 加密备份。`backupPassword` 省略或 null/空串时，
+   * 后端会使用当前会话的主密码加密备份（一键备份）。
+   */
+  backupToFile(path: string, backupPassword?: string | null): Promise<void> {
+    return invoke("backup_to_file", {
+      path,
+      backupPassword: backupPassword && backupPassword.length > 0 ? backupPassword : null,
+    });
   },
   restoreFromFile(path: string, backupPassword: string): Promise<void> {
     return invoke("restore_from_file", { path, backupPassword });

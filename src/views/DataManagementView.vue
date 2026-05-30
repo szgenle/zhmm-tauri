@@ -18,6 +18,13 @@ const showTagManagement = ref(false);
 const showSiteCatalog = ref(false);
 const backupPath = ref("");
 const backupPassword = ref("");
+// 备份时是否复用当前主密码（默认开，一键备份）
+const useMasterForBackup = ref(true);
+
+// 导出 xlsx 二次身份确认
+const showExportXlsxDialog = ref(false);
+const exportXlsxPath = ref("");
+const exportXlsxPassword = ref("");
 
 async function handleExportXlsx() {
   const path = await saveDialog({
@@ -26,10 +33,23 @@ async function handleExportXlsx() {
     filters: [{ name: "Excel", extensions: ["xlsx"] }],
   });
   if (!path) return;
+  // xlsx 明文落盘不可逆，先让用户重验主密码
+  exportXlsxPath.value = path as string;
+  exportXlsxPassword.value = "";
+  showExportXlsxDialog.value = true;
+}
+
+async function confirmExportXlsx() {
+  if (!exportXlsxPassword.value) {
+    message.error("请输入主密码");
+    return;
+  }
   busy.value = true;
   try {
-    await api.exportXlsx(path as string);
-    message.success(`已导出到 ${path}`);
+    await api.exportXlsx(exportXlsxPath.value, exportXlsxPassword.value);
+    message.success(`已导出到 ${exportXlsxPath.value}`);
+    showExportXlsxDialog.value = false;
+    exportXlsxPassword.value = "";
   } catch (e: any) {
     message.error(`导出失败: ${e}`);
   } finally {
@@ -86,6 +106,8 @@ async function startBackup() {
   backupPath.value = path as string;
   backupMode.value = "backup";
   backupPassword.value = "";
+  // 备份默认复用主密码，用户需要独立密码时可取消勾选
+  useMasterForBackup.value = true;
   showBackupDialog.value = true;
 }
 
@@ -115,14 +137,21 @@ async function startRestore() {
 }
 
 async function confirmBackup() {
-  if (!backupPassword.value) {
-    message.error("请输入备份密码");
+  // 备份场景下，如果勾选"使用主密码"则不需输入密码
+  const isMasterBackup =
+    backupMode.value === "backup" && useMasterForBackup.value;
+  if (!isMasterBackup && !backupPassword.value) {
+    message.error(backupMode.value === "backup" ? "请输入备份密码" : "请输入备份密码");
     return;
   }
   busy.value = true;
   try {
     if (backupMode.value === "backup") {
-      await api.backupToFile(backupPath.value, backupPassword.value);
+      // 勾选主密码时传 null，后端会使用会话主密码
+      await api.backupToFile(
+        backupPath.value,
+        isMasterBackup ? null : backupPassword.value,
+      );
       message.success(`已加密备份到 ${backupPath.value}`);
     } else {
       await api.restoreFromFile(backupPath.value, backupPassword.value);
@@ -148,7 +177,7 @@ async function confirmBackup() {
           <n-button :disabled="busy" @click="handleDownloadTemplate">下载模板</n-button>
         </n-space>
         <n-text depth="3" style="font-size: 12px">
-          xlsx 用于跨工具迁移；故意不导出 TOTP 密钥与密码历史，避免敏感信息扩散。
+          xlsx 用于跨工具迁移；导出为明文，需重验主密码。故意不导出 TOTP 密钥与密码历史，避免敏感信息扩散。
         </n-text>
       </n-space>
     </n-card>
@@ -161,7 +190,7 @@ async function confirmBackup() {
           <n-button :disabled="busy" @click="showBackupListDialog = true">备份管理</n-button>
         </n-space>
         <n-text depth="3" style="font-size: 12px">
-          加密备份保留所有信息（含 TOTP 密钥与历史），可使用与主密码不同的备份密码。
+          加密备份保留所有信息（含 TOTP 密钥与历史）。默认复用主密码一键备份，也可设置独立备份密码。
         </n-text>
       </n-space>
     </n-card>
@@ -186,12 +215,20 @@ async function confirmBackup() {
         <n-form-item label="文件">
           <n-text style="word-break: break-all">{{ backupPath }}</n-text>
         </n-form-item>
-        <n-form-item label="密码">
+        <n-form-item v-if="backupMode === 'backup'" label="密码来源">
+          <n-checkbox v-model:checked="useMasterForBackup">
+            使用当前主密码（一键备份）
+          </n-checkbox>
+        </n-form-item>
+        <n-form-item
+          v-if="!(backupMode === 'backup' && useMasterForBackup)"
+          label="密码"
+        >
           <n-input
             v-model:value="backupPassword"
             type="password"
             show-password-on="click"
-            placeholder="备份用密码"
+            :placeholder="backupMode === 'backup' ? '独立的备份密码' : '备份文件的密码'"
             @keyup.enter="confirmBackup"
           />
         </n-form-item>
@@ -202,6 +239,36 @@ async function confirmBackup() {
           <n-button type="primary" :loading="busy" @click="confirmBackup">
             {{ backupMode === "backup" ? "备份" : "恢复" }}
           </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+    <n-modal
+      v-model:show="showExportXlsxDialog"
+      preset="card"
+      title="确认导出 xlsx（明文）"
+      style="width: 460px"
+    >
+      <n-alert type="warning" style="margin-bottom: 12px">
+        xlsx 将以明文落盘，不可逆。请重新输入主密码以确认本人操作。
+      </n-alert>
+      <n-form>
+        <n-form-item label="文件">
+          <n-text style="word-break: break-all">{{ exportXlsxPath }}</n-text>
+        </n-form-item>
+        <n-form-item label="主密码">
+          <n-input
+            v-model:value="exportXlsxPassword"
+            type="password"
+            show-password-on="click"
+            placeholder="请输入当前主密码"
+            @keyup.enter="confirmExportXlsx"
+          />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showExportXlsxDialog = false">取消</n-button>
+          <n-button type="primary" :loading="busy" @click="confirmExportXlsx">导出</n-button>
         </n-space>
       </template>
     </n-modal>

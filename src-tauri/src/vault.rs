@@ -638,6 +638,18 @@ impl VaultState {
 
     // ========== 主密码管理 ==========
 
+    /// 用当前缓存的主密码加密导出备份（备份场景的便捷调用）
+    ///
+    /// 与 `io_json::backup_to_file` 共用同一加密格式；调用方无需显式传入备份密码。
+    /// 备份后的文件可通过 `restore_from_file(path, <主密码>)` 解锁恢复。
+    pub fn backup_using_master(&self, path: &Path) -> AppResult<()> {
+        let master = self.master.read().clone().ok_or(AppError::Locked)?;
+        let master_str = std::str::from_utf8(&master)
+            .map_err(|e| AppError::Crypto(format!("master utf8: {e}")))?;
+        let snapshot = self.snapshot()?;
+        crate::io_json::backup_to_file(path, &snapshot, master_str)
+    }
+
     /// 校验主密码：尝试用给定密码解密当前文件，成功即正确
     pub fn verify_master_password(&self, password: &str) -> AppResult<bool> {
         let account = self.account.read().clone().ok_or(AppError::Locked)?;

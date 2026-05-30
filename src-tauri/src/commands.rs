@@ -140,9 +140,19 @@ pub fn parse_otpauth(uri: String) -> AppResult<OtpAuthParams> {
     totp::parse_otpauth_uri(&uri)
 }
 
-/// 导出当前密码库为 xlsx（明文落盘）
+/// 导出当前密码库为 xlsx（明文落盘，必须先重验主密码）
+///
+/// xlsx 导出是不可逆的明文脱敏，为防止"库已解锁"状态下被他人误操作，
+/// 这里要求调用方传入主密码进行二次身份确认。
 #[tauri::command]
-pub fn export_xlsx(path: String, state: State<'_, VaultState>) -> AppResult<()> {
+pub fn export_xlsx(
+    path: String,
+    master_password: String,
+    state: State<'_, VaultState>,
+) -> AppResult<()> {
+    if !state.verify_master_password(&master_password)? {
+        return Err(AppError::InvalidPassword);
+    }
     let snapshot = state.snapshot()?;
     io_xlsx::export_xlsx(&PathBuf::from(path), &snapshot.entries)
 }
@@ -154,18 +164,24 @@ pub fn import_xlsx(path: String, state: State<'_, VaultState>) -> AppResult<usiz
     state.extend_entries(entries)
 }
 
-/// 加密 JSON 备份到指定文件；可使用与主密码不同的备份密码
+/// 加密 JSON 备份到指定文件。
+///
+/// `backup_password` 为 `None` 或空串时，默认使用当前会话的主密码加密备份（一键备份）；
+/// 如需使用独立的备份密码，则显式传入。备份产物本身是密文，
+/// 因此备份动作不需要额外的身份再验证。
 #[tauri::command]
 pub fn backup_to_file(
     path: String,
-    backup_password: String,
+    backup_password: Option<String>,
     state: State<'_, VaultState>,
 ) -> AppResult<()> {
-    if backup_password.is_empty() {
-        return Err(AppError::Invalid("备份密码不能为空".into()));
+    match backup_password {
+        Some(pwd) if !pwd.is_empty() => {
+            let snapshot = state.snapshot()?;
+            io_json::backup_to_file(&PathBuf::from(path), &snapshot, &pwd)
+        }
+        _ => state.backup_using_master(&PathBuf::from(path)),
     }
-    let snapshot = state.snapshot()?;
-    io_json::backup_to_file(&PathBuf::from(path), &snapshot, &backup_password)
 }
 
 /// 从加密 JSON 文件恢复（完全覆盖当前数据）
