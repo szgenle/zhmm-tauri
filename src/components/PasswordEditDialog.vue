@@ -27,6 +27,7 @@ const message = useMessage();
 const editing = ref(false);
 const form = reactive<Required<PasswordInput>>({
   role: "个人",
+  name: "",
   userID: "",
   pwd: "",
   phone: "",
@@ -113,6 +114,7 @@ watch(
     if (props.editEntry) {
       const e = props.editEntry;
       form.role = e.role || "个人";
+      form.name = e.name || "";
       form.userID = e.userID;
       form.pwd = e.pwd;
       form.phone = e.phone;
@@ -154,6 +156,10 @@ watch(
     urlSuggestTimer = setTimeout(async () => {
       try {
         const suggestion = await api.suggestSite(trimmed);
+        // 名称为空时，用词典建议名称自动回填
+        if (suggestion.name && !form.name?.trim()) {
+          form.name = suggestion.name;
+        }
         if (suggestion.matched && suggestion.tags.length > 0) {
           const existing = new Set(form.tags);
           for (const t of suggestion.tags) {
@@ -172,6 +178,7 @@ watch(
 
 function resetForm() {
   form.role = "个人";
+  form.name = "";
   form.userID = "";
   form.pwd = "";
   form.phone = "";
@@ -188,8 +195,8 @@ function resetForm() {
 }
 
 async function handleSave() {
-  if (!form.userID?.trim() && !form.url?.trim()) {
-    message.error("请至少填写账号或网址");
+  if (!form.name?.trim() && !form.userID?.trim() && !form.url?.trim()) {
+    message.error("请至少填写名称、账号或网址");
     return;
   }
   editing.value = true;
@@ -279,6 +286,9 @@ function onTagPickerUpdate(next: string[]) {
             + 新建
           </n-button>
         </n-input-group>
+      </n-form-item>
+      <n-form-item label="名称">
+        <n-input v-model:value="form.name" placeholder="例如：微信、招商银行、GitHub" />
       </n-form-item>
       <n-form-item label="账号">
         <n-input v-model:value="form.userID" placeholder="例如：alice@example.com" />

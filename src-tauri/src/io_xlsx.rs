@@ -13,10 +13,11 @@ use rust_xlsxwriter::Workbook;
 use crate::errors::{AppError, AppResult};
 use crate::models::{normalize_tags, PasswordEntry};
 
-/// 13 列表头，与 Python 版 CN_HEADS 一致
+/// 14 列表头：在 Python 版 CN_HEADS 13 列基础上插入"名称"列（旧文件无此列时导入会自动忽略）
 const CN_HEADS: &[&str] = &[
     "ID",
     "类别",
+    "名称",
     "账号",
     "密码",
     "手机",
@@ -73,9 +74,10 @@ pub fn export_xlsx(path: &Path, entries: &[PasswordEntry]) -> AppResult<()> {
     }
     for (idx, e) in entries.iter().enumerate() {
         let r = (idx + 1) as u32;
-        let cells: [String; 13] = [
+        let cells: [String; 14] = [
             e.id.to_string(),
             e.role.clone(),
+            e.name.clone(),
             e.user_id.clone(),
             e.pwd.clone(),
             e.phone.clone(),
@@ -139,6 +141,8 @@ pub fn import_xlsx(path: &Path) -> AppResult<Vec<PasswordEntry>> {
             }
         }
         e.role = read_str(row, idx_of("类别"));
+        // "名称"为新增可选列，旧 xlsx 没有这一列时按空读取
+        e.name = read_str(row, idx_of("名称"));
         e.user_id = read_str(row, idx_of("账号"));
         e.pwd = read_str(row, idx_of("密码"));
         // 手机号若被读成 float，去掉小数尾

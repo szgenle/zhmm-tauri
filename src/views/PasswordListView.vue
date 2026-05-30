@@ -57,8 +57,9 @@ function normalize(s: string): string {
   return (s || "").trim().normalize("NFKC").toLowerCase();
 }
 
-/** 列表展示用的名称：账号 → 网址 → #id */
+/** 列表展示用的名称：名称 → 账号 → 网址 → #id */
 function displayName(row: PasswordSummary): string {
+  if (row.name) return row.name;
   if (row.userID) return row.userID;
   if (row.url) return row.url;
   return `#${row.id}`;
@@ -81,7 +82,7 @@ const filtered = computed<PasswordSummary[]>(() => {
   if (!q) return result;
   return result.filter((row) => {
     const fields = [
-      row.role, row.userID, row.phone, row.email, row.url, row.desc,
+      row.role, row.name, row.userID, row.phone, row.email, row.url, row.desc,
       ...(row.tags || []),
     ];
     return fields.some((f) => normalize(String(f || "")).includes(q));
@@ -277,6 +278,7 @@ interface ColumnConfig {
 
 const allColumnConfigs: ColumnConfig[] = [
   { key: "role", label: "分类" },
+  { key: "name", label: "名称" },
   { key: "userID", label: "账号", fixed: true },
   { key: "url", label: "网址" },
   { key: "email", label: "邮箱" },
@@ -288,16 +290,16 @@ const allColumnConfigs: ColumnConfig[] = [
   { key: "actions", label: "操作", fixed: true },
 ];
 
-// v5 起按标签分别记忆列配置：Record<tagKey, string[]>
-// 特殊 key __default__：未选标签或多选标签时使用的全局默认
-const STORAGE_KEY = "zhmm_visible_columns_v5";
+// v6 起新增 "name" 列，默认可见。仅在未设过 v6 时从 v5/v4 迁移作为全局默认
+const STORAGE_KEY = "zhmm_visible_columns_v6";
+const LEGACY_KEY_V5 = "zhmm_visible_columns_v5";
 const LEGACY_KEY_V4 = "zhmm_visible_columns_v4";
 const DEFAULT_TAG_KEY = "__default__";
 
-// 默认勾选：分类、账号(fixed)、网址、邮箱、手机、标签、备注、操作(fixed)
-// 2FA 和 密码更新时间 默认隐藏
+// 默认勾选：分类、名称、账号(fixed)、网址、邮箱、手机、备注、操作(fixed)
+// 标签、 2FA 和密码更新时间 默认隐藏
 const DEFAULT_VISIBLE_KEYS = [
-  "role", "userID", "url", "email", "phone", "desc", "actions",
+  "role", "name", "userID", "url", "email", "phone", "desc", "actions",
 ];
 
 function loadColumnPrefs(): Record<string, string[]> {
@@ -308,13 +310,41 @@ function loadColumnPrefs(): Record<string, string[]> {
       if (obj && typeof obj === "object" && !Array.isArray(obj)) return obj;
     }
   } catch {}
+  // 迁移：从 v5 拷贝各标签配置，并为所有配置补上 "name" 列（加在 role 后面）
+  try {
+    const v5 = localStorage.getItem(LEGACY_KEY_V5);
+    if (v5) {
+      const obj = JSON.parse(v5);
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+        const migrated: Record<string, string[]> = {};
+        for (const [k, arr] of Object.entries(obj)) {
+          if (Array.isArray(arr)) {
+            const list = (arr as unknown[]).filter((x): x is string => typeof x === "string");
+            if (!list.includes("name")) {
+              const idx = list.indexOf("role");
+              if (idx >= 0) list.splice(idx + 1, 0, "name");
+              else list.unshift("name");
+            }
+            migrated[k] = list;
+          }
+        }
+        return migrated;
+      }
+    }
+  } catch {}
   // 迁移：把旧 v4 数组作为全局默认
   try {
     const legacy = localStorage.getItem(LEGACY_KEY_V4);
     if (legacy) {
       const arr = JSON.parse(legacy);
       if (Array.isArray(arr) && arr.length > 0) {
-        return { [DEFAULT_TAG_KEY]: arr };
+        const list = arr.filter((x: unknown): x is string => typeof x === "string");
+        if (!list.includes("name")) {
+          const idx = list.indexOf("role");
+          if (idx >= 0) list.splice(idx + 1, 0, "name");
+          else list.unshift("name");
+        }
+        return { [DEFAULT_TAG_KEY]: list };
       }
     }
   } catch {}
@@ -355,27 +385,37 @@ function toggleColumn(key: string) {
 const allColumns: DataTableColumns<PasswordSummary> = [
   { title: "分类", key: "role", width: 80 },
   {
+    title: "名称",
+    key: "name",
+    width: 160,
+    ellipsis: { tooltip: true },
+  },
+  {
     title: "账号",
     key: "userID",
     width: 200,
     render(row) {
       const pwd = revealedPasswords.value.get(row.id);
-      const name = displayName(row);
-      const nameNode = h(
-        'span',
-        {
-          class: 'username-copy',
-          title: '点击复制账号',
-          onClick: (e: MouseEvent) => {
-            e.stopPropagation();
-            handleCopyUsername(row);
-          },
-        },
-        [
-          h('span', { class: 'username-text' }, name),
-          h(NIcon, { size: 14, class: 'username-copy-icon' }, { default: () => h(CopyOutline) }),
-        ]
-      );
+      // 账号列只显示 userID；名称、网址由独立列呈现。
+      // 若 userID 为空且名称列被隐藏，退一步用 displayName 避免表格出现空行
+      const text = row.userID || (visibleColumnKeys.value.includes("name") ? "" : displayName(row));
+      const nameNode = text
+        ? h(
+            'span',
+            {
+              class: 'username-copy',
+              title: '点击复制账号',
+              onClick: (e: MouseEvent) => {
+                e.stopPropagation();
+                handleCopyUsername(row);
+              },
+            },
+            [
+              h('span', { class: 'username-text' }, text),
+              h(NIcon, { size: 14, class: 'username-copy-icon' }, { default: () => h(CopyOutline) }),
+            ]
+          )
+        : h('span', {}, '');
       const children: any[] = [nameNode];
       if (pwd) {
         children.push(

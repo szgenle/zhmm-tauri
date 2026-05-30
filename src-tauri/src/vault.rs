@@ -157,6 +157,7 @@ impl VaultState {
         if !input.role.is_empty() {
             entry.role = std::mem::take(&mut input.role);
         }
+        entry.name = std::mem::take(&mut input.name);
         entry.user_id = std::mem::take(&mut input.user_id);
         entry.pwd = std::mem::take(&mut input.pwd);
         entry.phone = std::mem::take(&mut input.phone);
@@ -214,6 +215,7 @@ impl VaultState {
             if !input.role.is_empty() {
                 entry.role = std::mem::take(&mut input.role);
             }
+            entry.name = std::mem::take(&mut input.name);
             entry.user_id = std::mem::take(&mut input.user_id);
             entry.phone = std::mem::take(&mut input.phone);
             entry.email = std::mem::take(&mut input.email);

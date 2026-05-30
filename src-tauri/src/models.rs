@@ -48,6 +48,9 @@ pub struct PasswordEntry {
     pub id: i64,
     #[serde(default = "default_role")]
     pub role: String,
+    /// 名称：网站名/App 名等通用主标识（与 Python 版兼容，旧库无此字段时为空）
+    #[serde(default)]
+    pub name: String,
     #[serde(rename = "userID", default)]
     pub user_id: String,
     #[serde(default)]
@@ -93,6 +96,7 @@ impl PasswordEntry {
         Self {
             id: ts,
             role: DEFAULT_ROLE.to_string(),
+            name: String::new(),
             user_id: String::new(),
             pwd: String::new(),
             phone: String::new(),
@@ -176,6 +180,7 @@ impl VaultData {
 pub struct PasswordSummary {
     pub id: i64,
     pub role: String,
+    pub name: String,
     #[serde(rename = "userID")]
     pub user_id: String,
     pub phone: String,
@@ -196,6 +201,7 @@ impl From<&PasswordEntry> for PasswordSummary {
         Self {
             id: e.id,
             role: e.role.clone(),
+            name: e.name.clone(),
             user_id: e.user_id.clone(),
             phone: e.phone.clone(),
             email: e.email.clone(),
@@ -214,6 +220,8 @@ impl From<&PasswordEntry> for PasswordSummary {
 pub struct PasswordInput {
     #[serde(default = "default_role")]
     pub role: String,
+    #[serde(default)]
+    pub name: String,
     #[serde(rename = "userID", default)]
     pub user_id: String,
     #[serde(default)]

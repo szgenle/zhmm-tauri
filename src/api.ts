@@ -20,6 +20,8 @@ export interface PasswordHistoryItem {
 export interface PasswordSummary {
   id: number;
   role: string;
+  /** 名称：网站名/App 名等通用主标识（可为空） */
+  name: string;
   userID: string;
   phone: string;
   email: string;
@@ -35,6 +37,8 @@ export interface PasswordSummary {
 export interface PasswordEntry {
   id: number;
   role: string;
+  /** 名称：网站名/App 名等通用主标识（可为空） */
+  name: string;
   userID: string;
   pwd: string;
   phone: string;
@@ -52,6 +56,7 @@ export interface PasswordEntry {
 
 export interface PasswordInput {
   role?: string;
+  name?: string;
   userID?: string;
   pwd?: string;
   phone?: string;

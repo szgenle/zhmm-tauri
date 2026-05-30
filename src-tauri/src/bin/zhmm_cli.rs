@@ -253,6 +253,7 @@ fn run(cli: Cli) -> AppResult<()> {
             let state = unlock(cli.password.as_deref(), &file, &account)?;
             let input = PasswordInput {
                 role: role.unwrap_or_else(|| DEFAULT_ROLE.to_string()),
+                name: String::new(),
                 user_id: user,
                 pwd: final_pwd,
                 phone: phone.unwrap_or_default(),
