@@ -338,11 +338,10 @@ function clearAllDetailCache() {
   expandedSecretReveal.value = {};
 }
 
-async function copyExpandValue(value: string, isSecret: boolean) {
+async function copyExpandSecret(value: string) {
   try {
-    if (isSecret) await copyAndScheduleClear(value);
-    else await writeText(value);
-    message.success(isSecret ? "已复制（剪贴板将自动清空）" : "已复制");
+    await copyAndScheduleClear(value);
+    message.success("已复制（剪贴板将自动清空）");
   } catch (e: any) {
     message.error(`复制失败: ${e}`);
   }
@@ -380,61 +379,67 @@ function renderExpand(row: PasswordSummary) {
   if (ordered.length === 0) {
     return h("div", { class: "expand-empty" }, "该记录暂无扩展字段");
   }
-  return h(
-    "div",
-    { class: "expand-fields" },
-    ordered.map(([k, v]) => {
-      const def = defByKey.get(k);
-      const label = def?.label || k;
-      const isSecret = def?.field_type === "secret";
-      const isMultiline = def?.field_type === "multiline" || v.includes("\n");
-      const revealKey = `${row.id}:${k}`;
-      const revealed = !!expandedSecretReveal.value[revealKey];
-      const display = isSecret && !revealed ? "••••••••" : v;
-      return h("div", { class: "expand-field-row", key: k }, [
-        h("div", { class: "field-label" }, label),
-        h(
-          "div",
-          {
-            class:
-              "field-value" +
-              (isSecret && !revealed ? " field-value-mask" : "") +
-              (isMultiline ? " field-value-multiline" : ""),
-          },
-          display
-        ),
-        h("div", { class: "field-actions" }, [
-          ...(isSecret
-            ? [
-                h(
-                  NButton,
-                  {
-                    size: "tiny",
-                    quaternary: true,
-                    onClick: () => {
-                      expandedSecretReveal.value = {
-                        ...expandedSecretReveal.value,
-                        [revealKey]: !revealed,
-                      };
-                    },
-                  },
-                  { default: () => (revealed ? "隐藏" : "显示") }
-                ),
-              ]
-            : []),
+  // 横排布局：第一排字段名、第二排对应值与操作按钮；列数超出时水平滚动
+  const labelCells = ordered.map(([k]) => {
+    const def = defByKey.get(k);
+    return h("div", { class: "hfield-label", key: `l:${k}` }, def?.label || k);
+  });
+  const valueCells = ordered.map(([k, v]) => {
+    const def = defByKey.get(k);
+    const isSecret = def?.field_type === "secret";
+    const isMultiline = def?.field_type === "multiline" || v.includes("\n");
+    const revealKey = `${row.id}:${k}`;
+    const revealed = !!expandedSecretReveal.value[revealKey];
+    const display = isSecret && !revealed ? "••••••••" : v;
+    const children: any[] = [
+      h(
+        "div",
+        {
+          class:
+            "hfield-value" +
+            (isSecret && !revealed ? " hfield-value-mask" : "") +
+            (isMultiline ? " hfield-value-multiline" : ""),
+          title: isSecret && !revealed ? "点击右侧“显示”查看内容" : v,
+        },
+        display,
+      ),
+    ];
+    // 仅 secret 字段保留动作区：显示/隐藏 + 复制（secret 复制仍需走自动清剪贴板逻辑）
+    if (isSecret) {
+      children.push(
+        h("div", { class: "hfield-actions" }, [
           h(
             NButton,
             {
               size: "tiny",
               quaternary: true,
-              onClick: () => copyExpandValue(v, isSecret),
+              onClick: () => {
+                expandedSecretReveal.value = {
+                  ...expandedSecretReveal.value,
+                  [revealKey]: !revealed,
+                };
+              },
             },
-            { default: () => "复制" }
+            { default: () => (revealed ? "隐藏" : "显示") },
+          ),
+          h(
+            NButton,
+            {
+              size: "tiny",
+              quaternary: true,
+              onClick: () => copyExpandSecret(v),
+            },
+            { default: () => "复制" },
           ),
         ]),
-      ]);
-    })
-  );
+      );
+    }
+    return h("div", { class: "hfield-value-cell", key: `v:${k}` }, children);
+  });
+  return h("div", { class: "expand-fields-h" }, [
+    h("div", { class: "hfield-row hfield-row-labels" }, labelCells),
+    h("div", { class: "hfield-row hfield-row-values" }, valueCells),
+  ]);
 }
 
 // --- 列可见性配置 ---
@@ -903,54 +908,87 @@ onMounted(async () => {
 .username-copy:hover .username-copy-icon {
   opacity: 1;
 }
-/* 行展开：扩展字段列表 */
-.expand-fields {
+/* 行展开样式迁出 scoped：详组件底部的非 scoped <style> 块。
+   原因：render function 中用 h() 创建的元素不会被加 scoped 的 data-v-xxx 属性，
+   所以放在 scoped 中的类名选择器不会生效。 */
+.expand-empty {
   padding: 8px 16px 10px 48px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.expand-field-row {
-  display: grid;
-  grid-template-columns: 120px 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background-color 0.15s;
-}
-.expand-field-row:hover {
-  background: var(--n-action-color, rgba(0, 0, 0, 0.04));
-}
-.field-label {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--n-text-color-3);
-  text-align: right;
+}
+</style>
+
+<!-- 展开区样式不能加 scoped，否则 h() 产生的 DOM 拿不到元素上的 data-v-xxx 属性 -->
+<style>
+.expand-fields-h {
+  padding: 4px 12px 8px 36px;
+  overflow-x: auto;
+}
+.hfield-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+.hfield-row-labels {
+  margin-bottom: 2px;
+}
+.hfield-row-values {
+  align-items: stretch;
+}
+.hfield-label {
+  flex: 0 0 auto;
+  min-width: 110px;
+  max-width: 220px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--n-text-color-3);
+  padding: 1px 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.field-value {
-  font-size: 13px;
+.hfield-value-cell {
+  flex: 0 0 auto;
+  min-width: 110px;
+  max-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--n-action-color, rgba(0, 0, 0, 0.03));
+  transition: background-color 0.15s;
+}
+.hfield-value-cell:hover {
+  background: var(--n-action-color, rgba(0, 0, 0, 0.06));
+}
+.hfield-value {
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--n-text-color-1);
   word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.field-value-mask {
+.hfield-value-mask {
   font-family: monospace;
   letter-spacing: 2px;
   color: var(--n-text-color-2);
 }
-.field-value-multiline {
+.hfield-value-multiline {
   white-space: pre-wrap;
+  word-break: break-word;
 }
-.field-actions {
+.hfield-actions {
   display: inline-flex;
-  gap: 4px;
+  gap: 2px;
   flex-shrink: 0;
+  margin-top: 1px;
 }
 .expand-empty {
-  padding: 8px 16px 10px 48px;
-  font-size: 13px;
+  padding: 4px 12px 6px 36px;
+  font-size: 12px;
   color: var(--n-text-color-3);
 }
 </style>
