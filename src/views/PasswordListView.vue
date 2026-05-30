@@ -12,6 +12,7 @@ import type { DataTableColumns } from "naive-ui";
 import {
   api,
   formatUtime,
+  type AccountTemplate,
   type PasswordEntry,
   type PasswordSummary,
 } from "../api";
@@ -33,6 +34,9 @@ const selectedRole = ref("");  // 空字符串表示"全部"
 const data = ref<PasswordSummary[]>([]);
 const loading = ref(false);
 const selectedTags = ref<string[]>([]);
+
+// 模板查询表：id -> { name, icon }。仅用于列表 chip 展示
+const templateMap = ref<Record<string, { name: string; icon: string }>>({});
 
 /** 从当前数据中提取所有分类，用于下拉选项 */
 const roleOptions = computed(() => {
@@ -285,6 +289,19 @@ async function loadData() {
   }
 }
 
+async function loadTemplates() {
+  try {
+    const list: AccountTemplate[] = await api.listTemplates();
+    const m: Record<string, { name: string; icon: string }> = {};
+    for (const t of list) {
+      m[t.id] = { name: t.name, icon: t.icon || "" };
+    }
+    templateMap.value = m;
+  } catch {
+    // 静默失败：老库或未解锁场景允许为空
+  }
+}
+
 // --- 列可见性配置 ---
 
 interface ColumnConfig {
@@ -301,6 +318,7 @@ const allColumnConfigs: ColumnConfig[] = [
   { key: "email", label: "邮箱" },
   { key: "phone", label: "手机" },
   { key: "tags", label: "标签" },
+  { key: "template", label: "模板" },
   { key: "desc", label: "备注" },
   { key: "totp", label: "2FA" },
   { key: "pwd_utime", label: "密码更新时间" },
@@ -466,6 +484,28 @@ const allColumns: DataTableColumns<PasswordSummary> = [
     },
   },
   {
+    title: "模板",
+    key: "template",
+    width: 130,
+    render(row) {
+      const id = row.template_id;
+      if (!id) return "";
+      const tpl = templateMap.value[id];
+      const label = tpl ? `${tpl.icon ? tpl.icon + ' ' : ''}${tpl.name}` : id;
+      const dangling = !tpl;
+      return h(
+        NTag,
+        {
+          size: "small",
+          round: true,
+          type: dangling ? "warning" : "default",
+          title: dangling ? `未知模板 id：${id}` : `模板 id：${id}`,
+        },
+        { default: () => label },
+      );
+    },
+  },
+  {
     title: "网址",
     key: "url",
     width: 200,
@@ -542,7 +582,7 @@ const columns = computed<DataTableColumns<PasswordSummary>>(() => {
 const searchInputRef = ref<InstanceType<typeof NInput> | null>(null);
 
 onMounted(async () => {
-  await loadData();
+  await Promise.all([loadData(), loadTemplates()]);
   nextTick(() => {
     searchInputRef.value?.focus();
   });

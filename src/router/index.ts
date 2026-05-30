@@ -30,6 +30,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "分类管理" },
       },
       {
+        path: "template-management",
+        name: "template-management",
+        component: () => import("../views/TemplateManagementView.vue"),
+        meta: { title: "模板管理" },
+      },
+      {
         path: "data-management",
         name: "data-management",
         component: () => import("../views/DataManagementView.vue"),
