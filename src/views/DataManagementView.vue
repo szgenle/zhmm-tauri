@@ -76,8 +76,11 @@ async function handleDownloadTemplate() {
 async function startBackup() {
   const path = await saveDialog({
     title: "保存加密备份",
-    defaultPath: `zhmm-backup-${new Date().toISOString().slice(0, 10)}.zmb`,
-    filters: [{ name: "zmb 加密备份", extensions: ["zmb"] }],
+    defaultPath: `account-jotter-backup-${new Date().toISOString().slice(0, 10)}.ajot`,
+    filters: [
+      { name: "加密备份（.ajot）", extensions: ["ajot"] },
+      { name: "加密备份（.zmb 旧版）", extensions: ["zmb"] },
+    ],
   });
   if (!path) return;
   backupPath.value = path as string;
@@ -90,7 +93,11 @@ async function startRestore() {
   const path = await openDialog({
     title: "选择加密备份文件",
     multiple: false,
-    filters: [{ name: "zmb 加密备份", extensions: ["zmb"] }],
+    filters: [
+      { name: "加密备份", extensions: ["ajot", "zmb"] },
+      { name: "账号小本本（.ajot）", extensions: ["ajot"] },
+      { name: "ZMB 备份（旧版）", extensions: ["zmb"] },
+    ],
   });
   if (!path) return;
   dialog.warning({

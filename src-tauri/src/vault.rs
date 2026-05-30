@@ -24,7 +24,10 @@ pub struct BackupInfo {
 }
 
 const BACKUP_DIR_NAME: &str = ".backups";
-const BACKUP_EXT: &str = "zhmm";
+/// 本地备份默认后缀（v2.0 起）
+const BACKUP_EXT: &str = "ajot";
+/// 历史备份后缀（仅读，兼容 v0.x 生成的 .zhmm 备份文件）
+const BACKUP_EXT_LEGACY: &str = "zhmm";
 
 pub struct VaultState {
     /// 当前活跃的密码库文件路径（未指定时为 None）
@@ -471,7 +474,9 @@ impl VaultState {
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some(BACKUP_EXT) {
+            // 同时接受新后缀 .ajot 与历史后缀 .zhmm
+            let ext = path.extension().and_then(|e| e.to_str());
+            if ext != Some(BACKUP_EXT) && ext != Some(BACKUP_EXT_LEGACY) {
                 continue;
             }
             let meta = entry.metadata()?;

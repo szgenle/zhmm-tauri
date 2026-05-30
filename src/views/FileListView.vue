@@ -72,7 +72,11 @@ async function openExternal() {
     const selected = await openDialog({
       title: "打开账号库",
       multiple: false,
-      filters: [{ name: "ZMB 账号库", extensions: ["zmb"] }],
+      filters: [
+        { name: "账号库文件", extensions: ["ajot", "zmb"] },
+        { name: "账号小本本（.ajot）", extensions: ["ajot"] },
+        { name: "ZMB 账号库（旧版）", extensions: ["zmb"] },
+      ],
     });
     if (typeof selected !== "string" || !selected) return;
 
@@ -125,7 +129,7 @@ function fileName(path: string): string {
       <div class="logo">
         <n-icon size="44" :depth="3"><ShieldCheckmarkOutline /></n-icon>
         <h1>账号小本本</h1>
-        <p class="subtitle">选择一个账号库以解锁，或新建/打开任意 .zmb 文件</p>
+        <p class="subtitle">选择一个账号库以解锁，或新建 / 打开 .ajot（也兼容老后缀 .zmb）</p>
       </div>
 
       <n-alert
@@ -155,7 +159,7 @@ function fileName(path: string): string {
             <template #icon>
               <n-icon><FolderOpenOutline /></n-icon>
             </template>
-            打开 .zmb 文件
+            打开账号库文件
           </n-button>
           <n-button quaternary @click="refresh" :loading="loading">
             <template #icon>

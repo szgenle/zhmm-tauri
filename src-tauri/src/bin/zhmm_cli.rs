@@ -1,7 +1,8 @@
-//! zhmm-cli：基于国密 SM3/SM4 的 .zmb 密码库命令行客户端
+//! zhmm-cli / accjot：账号小本本 · Account Jotter 命令行客户端
 //!
 //! 直接复用 Tauri 版核心模块（`vault`/`models`/`crypto`/`totp`/`io_xlsx`），
-//! 与 GUI 端共享同一份密库格式，互通。
+//! 与 GUI 端共享同一份密库格式：V2.0 起默认 v7（magic=`AJOT`），
+//! 兼容读取原 Python 版 .zmb（v6/v5）。
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -20,11 +21,11 @@ use zhmm_tauri_lib::{
 #[command(
     name = "zhmm-cli",
     version,
-    about = "zhmm 国密密码管理器命令行版（与 .zmb 密库互通）",
+    about = "账号小本本 · Account Jotter 命令行客户端（默认 .ajot v7，兼容 .zmb）",
     long_about = None,
 )]
 struct Cli {
-    /// 密码库文件路径（.zmb），可用环境变量 ZHMM_FILE
+    /// 密码库文件路径（.ajot 或老后缀 .zmb），可用环境变量 ZHMM_FILE
     #[arg(short = 'f', long, env = "ZHMM_FILE", global = true)]
     file: Option<PathBuf>,
 

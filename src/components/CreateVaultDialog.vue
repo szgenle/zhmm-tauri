@@ -7,7 +7,7 @@ import PasswordStrengthBar from "./PasswordStrengthBar.vue";
 
 /**
  * 创建新账号库对话框：
- *   1. 用户选保存路径（必须以 .zmb 结尾）
+ *   1. 用户选保存路径（默认 .ajot，也接受 .zmb 老后缀）
  *   2. 输入账号名（参与 KDF，遗忘后无法解密）
  *   3. 输入两次主密码
  *   4. 调 createVaultAt 落地，bcryptHash 后写入最近访问
@@ -88,11 +88,19 @@ async function chooseFile() {
   try {
     const selected = await saveDialog({
       title: "保存为",
-      defaultPath: "zhmm.zmb",
-      filters: [{ name: "ZMB 账号库", extensions: ["zmb"] }],
+      defaultPath: "account-jotter.ajot",
+      filters: [
+        { name: "账号小本本账号库", extensions: ["ajot"] },
+        { name: "ZMB 账号库（旧版）", extensions: ["zmb"] },
+      ],
     });
     if (typeof selected === "string" && selected) {
-      filePath.value = selected.endsWith(".zmb") ? selected : `${selected}.zmb`;
+      // 接受两种后缀；未带后缀则默认补 .ajot
+      const lower = selected.toLowerCase();
+      filePath.value =
+        lower.endsWith(".ajot") || lower.endsWith(".zmb")
+          ? selected
+          : `${selected}.ajot`;
     }
   } catch (e: any) {
     message.error(`选择文件失败: ${e}`);

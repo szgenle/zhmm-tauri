@@ -28,7 +28,7 @@
 
 - 🦀 **后端**：Rust + Tauri 2.x，加密/序列化/IO 在原生层完成，体积小、启动快
 - 🖼 **前端**：Vue 3 + TypeScript + Naive UI，组件化页面 + 自定义主题
-- 🔄 **完全互通**：与 Python 版共享同一套 `.zmb` 密库格式（v6 = SM4-GCM；v5 仅读，自动升级 v6），双方互相打开同一个文件
+- 🔄 **默认 v7（`.ajot`）** + **单向读取 v6/v5（`.zmb`）**：v2.0 起默认写 v7（magic=`AJOT`，SM4-GCM）；原 Python 版 `.zmb` 可直接打开，下次保存仅补充写出 v7（不修改老文件之前允许在 Python 端重复读取）
 
 > ⚠️ 项目仍在持续迭代中，暂未发布正式版二进制；欢迎从源码体验、提 Issue 与 PR。
 
@@ -37,15 +37,15 @@
 ## ✨ 特性
 
 - 🔒 **国密加密栈**：Argon2id（默认 `m=64 MiB, t=3, p=1`，账号 + 主密码双因子）派生 SM4 密钥 → **SM4-GCM 原生 AEAD**（CTR 流加密 + GHASH 认证，header 含 Argon2 参数整体作为 AAD）；密钥永不落盘
-- 📦 **单文件密库**：一个 `.zmb` 文件即完整密库（v6 二进制格式：magic + 版本号 + Argon2 参数 + salt + iv + 密文 + 认证标签）
-- 🤝 **与 Python 版互通**：Python 版 `zhmm` 创建的 `.zmb` 文件可直接在本应用打开；本应用保存的文件也可被 Python 版读取
-- 🔓 **历史版本兼容**：可读取 v5 旧格式（SM4-CBC + HMAC-SM3），下次保存自动升级到 v6
-- 🏷 **多账号库 + 分类（role） + 标签**：支持同时管理多个 `.zmb` 文件，条目可按 role 维度筛选 + 0~16 个标签 AND 语义筛选
+- 📦 **单文件密库**：一个 `.ajot` 文件即完整密库（v7 二进制格式：magic=`AJOT` + 版本号 + Argon2 参数 + salt + iv + 密文 + 认证标签）
+- 🔑 **老后缀单向导入**：Python 版 `zhmm` 创建的 `.zmb`（v6/v5）可直接在本应用打开；v2.0 写出的 `.ajot` Python 端不再读取
+- 🔓 **历史版本兼容**：可读取 v5（SM4-CBC + HMAC-SM3）与 v6（SM4-GCM）旧格式，下次保存自动升级到 v7
+- 🏷 **多账号库 + 分类（role） + 标签**：支持同时管理多个账号库文件（`.ajot` / `.zmb`），条目可按 role 维度筛选 + 0~16 个标签 AND 语义筛选
 - 🌐 **网址自动打标签**：随包发行的离线词典（约 400 条中文常用站点），URL 失焦时自动识别并建议标签；纯离线、不联网
 - 🔐 **TOTP 2FA**：内置动态口令（RFC 6238 SHA1/SHA256/SHA512 + 国密 SM3-TOTP 扩展），支持 `otpauth://` URI 解析与 Base32 手动粘贴
 - 🕘 **密码历史**：每条目自动保留最近 5 次旧密码，可在编辑界面查看 / 复制 / 一键回滚
 - 📊 **密码强度可视化**：纯离线启发式评估，登录、新增、随机生成、换主密码界面均内嵌实时强度条
-- 📝 **Excel 导入导出**：支持 xlsx 导入导出（导出自动剔除 TOTP Secret 与历史密码，仅 `.zmb` 加密备份完整保留）
+- 📝 **Excel 导入导出**：支持 xlsx 导入导出（导出自动剔除 TOTP Secret 与历史密码，仅 `.ajot` 加密备份完整保留）
 - 🔑 **主密码原地更换**：内部先自动备份再原地落盘，无需导出/重导入
 - 💾 **本地备份管理**：在密库同目录下维护 `.backups/` 子目录，支持创建 / 列出 / 恢复 / 清理
 - 🎨 **可切换主题**：内置 Cyberpunk / Glass / Minimal / Warm 四套预设，可在「设置」中切换
@@ -138,13 +138,13 @@ npm run tauri build
 
 ## 🚀 快速开始
 
-1. 启动应用，首次使用点击「新建账号库」，选择保存位置（`.zmb` 文件）
+1. 启动应用，首次使用点击「新建账号库」，选择保存位置（默认 `.ajot` 文件）
 2. 输入 **账号名**（任意稳定唯一标识，如邮箱、手机号；会作为 KDF 常量盐参与密钥派生）和 **主密码**
 3. 进入主界面后即可新增条目（站点 / 账号 / 密码 / TOTP / 备注 / 标签）
 4. 在「设置」中可切换主题、配置自动锁定、更换主密码
 5. 在「数据管理」中可导入导出 Excel、管理标签、查看网站词典、维护本地备份
 
-> 💡 已有 Python 版 `zhmm` 的用户可直接「打开账号库」选择原有 `.zmb` 文件，账号名 + 主密码与原版一致即可。
+> 💡 已有 Python 版 `zhmm` 的用户可直接「打开账号库」选择原有 `.zmb` 文件，账号名 + 主密码与原版一致即可；下次保存会在原路径写出 v7，**原 Python 端从此不再能读取**（如需保留 Python 侧读取能力，请先手动复一份 .zmb 备份）。
 
 ### 🧪 试用 Demo 数据
 
@@ -192,17 +192,17 @@ zhmm-tauri/
 └── Makefile                   # 常用命令封装
 ```
 
-### 🔐 加密设计（`.zmb` 文件 v6 格式）
+### 🔐 加密设计（`.ajot` 文件 v7 格式）
 
 | 环节 | 算法 | 参数 |
 |------|------|------|
 | 密钥派生 | **Argon2id**（memory-hard） | 默认 `m=64 MiB, t=3, p=1`，16 字节随机盐；KDF 口令材料 `account.utf8 ‖ 0x00 ‖ password.utf8` |
 | 加密 + 认证 | **SM4-GCM** | 12 字节随机 IV，CTR 流加密 + GHASH 认证，header（含 Argon2 参数）作为 AAD 整体保护，16 字节认证标签 |
 
-文件布局（v6）：
+文件布局（v7）：
 
 ```
-magic(4B="ZHMM") | ver(1B=6) | m_cost(4B BE) | t_cost(4B BE) | p_cost(4B BE)
+magic(4B="AJOT") | ver(1B=7) | m_cost(4B BE) | t_cost(4B BE) | p_cost(4B BE)
                  | salt(16B) | iv(12B) | ciphertext(NB) | tag(16B)
 ```
 
@@ -252,8 +252,8 @@ cd src-tauri && cargo test         # Rust 单元测试（含加密往返、篡�
 > 本项目处理用户密码数据，请在使用前仔细阅读 [SECURITY.md](SECURITY.md)。
 
 - **密钥派生**：账号名 + 主密码以 `\x00` 拼接后经 **Argon2id** 派生加密密钥；Argon2 参数随密文头部内嵌，便于未来调强度时兼容老文件；**主密码与账号永不持久化**
-- **数据加密**：所有密码条目以 **SM4-GCM** 加密写入 `.zmb` 文件（v6 格式）
-- **`.zmb` 文件**：等同于密库，请妥善保管，建议多地备份
+- **数据加密**：所有密码条目以 **SM4-GCM** 加密写入 `.ajot` 文件（v7 格式）；可读取 Python 版遗留的 `.zmb`（v6/v5）
+- **账号库文件**：`.ajot`（新）/ `.zmb`（老）等同于密库，请妥善保管，建议多地备份
 - **内存清零**：解锁后明文条目驻留内存，锁定 / Drop 时统一 `zeroize`
 - **已知限制**：详见 [SECURITY.md](SECURITY.md)
 
@@ -284,5 +284,5 @@ cd src-tauri && cargo test         # Rust 单元测试（含加密往返、篡�
 - [Tauri](https://tauri.app/) — 跨平台桌面应用框架
 - [Vue](https://vuejs.org/) / [Naive UI](https://www.naiveui.com/) — 前端框架与组件库
 - [RustCrypto](https://github.com/RustCrypto) — `sm3` / `sm4` / `argon2` / `hmac` 等密码学原语
-- [zhmm](https://github.com/szgenle/zhmm) — 原 Python 版项目，本仓库的设计参考与 `.zmb` 文件格式来源
+- [zhmm](https://github.com/szgenle/zhmm) — 原 Python 版项目，本仓库的设计参考与 `.zmb` 文件格式来源（v6/v5 格式后续仅作输入兼容）
 - 所有贡献者 💙

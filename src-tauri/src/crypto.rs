@@ -1,11 +1,15 @@
-//! 加密层：与 Python 版完全互通的 ZHMM 文件格式
+//! 加密层：账号小本本 · Account Jotter v7 文件格式（兼容读 v6/v5）
 //!
-//! - v6（默认写）：Argon2id KDF（材料 = `account || \x00 || password`）+ SM4-GCM AEAD
-//! - v5（仅读）：Argon2id KDF（同上）+ SM4-CBC + HMAC-SM3
+//! - v7（默认写）：magic=`AJOT`, ver=7，Argon2id KDF + SM4-GCM AEAD —— 协议同 v6，仅 magic/版本号不同
+//! - v6（兼容读）：magic=`ZHMM`, ver=6，原 Python 版互通格式（Argon2id + SM4-GCM）
+//! - v5（兼容读）：magic=`ZHMM`, ver=5，老版 Python 格式（Argon2id + SM4-CBC + HMAC-SM3）
 //!
-//! v6 文件头（45B）：magic(4="ZHMM") + ver(1=6) + m_cost(4BE) + t_cost(4BE) + p_cost(4BE)
-//!                + salt(16) + iv(12)，header 全部纳入 GCM AAD。
+//! v7/v6 文件头（45B）：magic(4) + ver(1) + m_cost(4BE) + t_cost(4BE) + p_cost(4BE)
+//!                  + salt(16) + iv(12)，header 全部纳入 GCM AAD。
 //! v5 文件头（49B）：iv(16)、tag(32) HMAC-SM3 over blob[..-tag_len]。
+//!
+//! 写入策略：v2.0 起一律输出 v7（magic=`AJOT`）；读取按 (magic, version) 分发，
+//! 旧 v6/v5 文件读后下次保存自动升级到 v7。
 //!
 //! Rust 生态没有现成 SM4-GCM crate，本模块基于 RustCrypto `sm4` 单块加密原语
 //! 自实现 GCM（CTR 流 + GHASH 认证），仅支持 96-bit IV 与 128-bit tag。
@@ -26,7 +30,11 @@ use crate::errors::{AppError, AppResult};
 
 // ---------- 协议常量 ----------
 
-const MAGIC: &[u8; 4] = b"ZHMM";
+/// v7 magic：账号小本本 · Account Jotter（v2.0 默认写入）
+const MAGIC_V7: &[u8; 4] = b"AJOT";
+/// v6/v5 magic：原 Python 版 zhmm（仅兼容读）
+const MAGIC_LEGACY: &[u8; 4] = b"ZHMM";
+const VERSION_V7: u8 = 7;
 const VERSION_V6: u8 = 6;
 const VERSION_V5: u8 = 5;
 
@@ -241,8 +249,19 @@ fn sm4_gcm_open(
 
 // ---------- 公开 API ----------
 
-/// 用 (account, password) 加密明文，输出 v6 blob
+/// 用 (account, password) 加密明文，输出 v7 blob（magic=`AJOT`）
 pub fn seal(account: &str, password: &str, plaintext: &[u8]) -> AppResult<Vec<u8>> {
+    seal_inner(MAGIC_V7, VERSION_V7, account, password, plaintext)
+}
+
+/// 内部 sealer：参数化 magic/version，供 v7 默认写与测试造 v6 复用
+fn seal_inner(
+    magic: &[u8; 4],
+    version: u8,
+    account: &str,
+    password: &str,
+    plaintext: &[u8],
+) -> AppResult<Vec<u8>> {
     let mut salt = [0u8; SALT_LEN];
     let mut iv = [0u8; IV_LEN];
     rand::thread_rng().fill_bytes(&mut salt);
@@ -253,8 +272,8 @@ pub fn seal(account: &str, password: &str, plaintext: &[u8]) -> AppResult<Vec<u8
     let p_cost = ARGON2_P_COST;
 
     let mut header = Vec::with_capacity(V6_HEADER_LEN);
-    header.extend_from_slice(MAGIC);
-    header.push(VERSION_V6);
+    header.extend_from_slice(magic);
+    header.push(version);
     header.extend_from_slice(&m_cost.to_be_bytes());
     header.extend_from_slice(&t_cost.to_be_bytes());
     header.extend_from_slice(&p_cost.to_be_bytes());
@@ -276,23 +295,34 @@ pub fn seal(account: &str, password: &str, plaintext: &[u8]) -> AppResult<Vec<u8
     Ok(out)
 }
 
-/// 用 (account, password) 解密 blob，按版本分发
+/// 用 (account, password) 解密 blob，按 (magic, version) 分发
+///
+/// - `AJOT` + ver7 → v7（账号小本本，SM4-GCM）
+/// - `ZHMM` + ver6 → v6（Python 版，SM4-GCM，单向兼容读）
+/// - `ZHMM` + ver5 → v5（老 Python 版，SM4-CBC + HMAC-SM3，单向兼容读）
 pub fn open(account: &str, password: &str, blob: &[u8]) -> AppResult<Vec<u8>> {
-    if blob.len() < 5 || &blob[..4] != MAGIC {
-        return Err(AppError::Crypto("not a zhmm vault (magic mismatch)".into()));
+    if blob.len() < 5 {
+        return Err(AppError::Crypto("vault blob too short".into()));
     }
+    let magic: &[u8; 4] = blob[..4].try_into().unwrap();
     let version = blob[4];
-    match version {
-        VERSION_V6 => open_v6(account, password, blob),
-        VERSION_V5 => open_v5(account, password, blob),
-        v => Err(AppError::Crypto(format!("unsupported vault version: {v}"))),
+    match (magic, version) {
+        (m, VERSION_V7) if m == MAGIC_V7 => open_v6_like(account, password, blob),
+        (m, VERSION_V6) if m == MAGIC_LEGACY => open_v6_like(account, password, blob),
+        (m, VERSION_V5) if m == MAGIC_LEGACY => open_v5(account, password, blob),
+        (m, v) => Err(AppError::Crypto(format!(
+            "unsupported vault: magic={:?} version={}",
+            std::str::from_utf8(m).unwrap_or("?"),
+            v
+        ))),
     }
 }
 
-fn open_v6(account: &str, password: &str, blob: &[u8]) -> AppResult<Vec<u8>> {
+/// v7 与 v6 文件头/AAD 结构一致，解密路径完全共享
+fn open_v6_like(account: &str, password: &str, blob: &[u8]) -> AppResult<Vec<u8>> {
     if blob.len() < V6_MIN_BLOB_LEN {
         return Err(AppError::Crypto(format!(
-            "v6 blob too short: {}",
+            "vault blob too short: {}",
             blob.len()
         )));
     }
@@ -398,6 +428,24 @@ mod tests {
         assert_eq!(plain, b"hello, sm4-gcm!");
     }
 
+    /// v7 默认写入：magic 必为 `AJOT`，ver 必为 7
+    #[test]
+    fn seal_writes_v7_magic() {
+        let blob = seal("user", "pwd", b"hi").unwrap();
+        assert_eq!(&blob[..4], b"AJOT");
+        assert_eq!(blob[4], 7);
+    }
+
+    /// v6 兼容读：造一个 magic=`ZHMM` ver=6 的 blob，能被 open() 读出
+    #[test]
+    fn read_legacy_v6_zhmm() {
+        let blob = seal_inner(b"ZHMM", 6, "user", "pwd", b"legacy v6").unwrap();
+        assert_eq!(&blob[..4], b"ZHMM");
+        assert_eq!(blob[4], 6);
+        let plain = open("user", "pwd", &blob).unwrap();
+        assert_eq!(plain, b"legacy v6");
+    }
+
     #[test]
     fn wrong_password() {
         let blob = seal("user", "good", b"data").unwrap();
@@ -440,6 +488,18 @@ mod tests {
     fn magic_mismatch() {
         let blob = vec![0u8; 100];
         assert!(open("u", "p", &blob).is_err());
+    }
+
+    /// 拒绝未知 magic/version 组合（如 `AJOT`+ver5、`ZHMM`+ver7）
+    #[test]
+    fn rejects_unknown_magic_version_combo() {
+        let mut blob = seal("u", "p", b"x").unwrap();
+        blob[4] = 5; // AJOT + ver5 不合法
+        assert!(open("u", "p", &blob).is_err());
+
+        let mut blob2 = seal_inner(b"ZHMM", 6, "u", "p", b"x").unwrap();
+        blob2[4] = 7; // ZHMM + ver7 不合法
+        assert!(open("u", "p", &blob2).is_err());
     }
 
     #[test]
