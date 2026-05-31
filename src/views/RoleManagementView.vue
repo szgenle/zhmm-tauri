@@ -97,6 +97,7 @@ interface ColumnConfig {
 
 const allColumnConfigs: ColumnConfig[] = [
   { key: "role", label: "分类" },
+  { key: "name", label: "名称" },
   { key: "userID", label: "账号", fixed: true },
   { key: "url", label: "网址" },
   { key: "email", label: "邮箱" },
@@ -106,8 +107,8 @@ const allColumnConfigs: ColumnConfig[] = [
   { key: "utime", label: "更新时间" },
 ];
 
-const STORAGE_KEY = "ajot_role_mgmt_columns_v1";
-const DEFAULT_VISIBLE_KEYS = ["userID", "url", "desc"];
+const STORAGE_KEY = "ajot_role_mgmt_columns_v2";
+const DEFAULT_VISIBLE_KEYS = ["name", "userID", "url", "desc"];
 
 function loadGroupColumnPrefs(): Record<string, string[]> {
   try {
@@ -235,15 +236,18 @@ const allTagGroups = computed<TagGroup[]>(() => {
   return result;
 });
 
-/** 检测分组内是否所有条目使用同一模板 */
+/** 检测分组内是否只使用一种模板（忽略无模板的条目） */
 function detectSoleTemplate(entries: PasswordSummary[]): AccountTemplate | undefined {
   if (entries.length === 0) return undefined;
-  const first = entries[0].template_id;
-  if (!first) return undefined;
-  for (let i = 1; i < entries.length; i++) {
-    if (entries[i].template_id !== first) return undefined;
+  // 收集所有非空 template_id
+  const ids = new Set<string>();
+  for (const e of entries) {
+    if (e.template_id) ids.add(e.template_id);
   }
-  return templateMap.value.get(first);
+  // 只有恰好一种模板时才返回
+  if (ids.size !== 1) return undefined;
+  const [soleId] = ids;
+  return templateMap.value.get(soleId);
 }
 
 /** 标签芯片列表（最近查看的排前面） */
@@ -312,6 +316,7 @@ async function handleOpenUrl(row: PasswordSummary) {
 function buildColumns(visibleKeys: string[], tpl?: AccountTemplate): DataTableColumns<PasswordSummary> {
   const all: DataTableColumns<PasswordSummary> = [
     { title: "分类", key: "role", width: 80 },
+    { title: "名称", key: "name", width: 160, ellipsis: { tooltip: true } },
     {
       title: "账号",
       key: "userID",
@@ -380,9 +385,11 @@ function buildColumns(visibleKeys: string[], tpl?: AccountTemplate): DataTableCo
       width: 140,
       ellipsis: { tooltip: true },
       render(row: PasswordSummary) {
+        // 无模板关联的条目直接显示空
+        if (!row.template_id) return "";
         // 需要从缓存中读取扩展字段
         const cached = customFieldsCache.value.get(row.id);
-        if (!cached) return h("span", { style: "color: var(--n-text-color-3); font-size: 12px;" }, "…");
+        if (cached === undefined) return h("span", { style: "color: var(--n-text-color-3); font-size: 12px;" }, "…");
         const val = cached[f.key] || "";
         if (f.field_type === "secret" && val) return "••••";
         return val;
@@ -396,9 +403,10 @@ function buildColumns(visibleKeys: string[], tpl?: AccountTemplate): DataTableCo
 // --- 扩展字段缓存（用于模板列渲染） ---
 const customFieldsCache = ref<Map<number, Record<string, string>>>(new Map());
 
-async function loadCustomFieldsForGroup(entries: PasswordSummary[]) {
+async function loadCustomFieldsForGroup(entries: PasswordSummary[], tpl?: AccountTemplate) {
+  // 加载有 custom_fields 或有模板关联的条目（模板字段可能已填写但 has_custom_fields 未标记）
   const toLoad = entries.filter(
-    (e) => e.has_custom_fields && !customFieldsCache.value.has(e.id)
+    (e) => !customFieldsCache.value.has(e.id) && (e.has_custom_fields || (tpl && e.template_id))
   );
   if (!toLoad.length) return;
   // 并发加载（限制并发数避免爆栈）
@@ -409,10 +417,10 @@ async function loadCustomFieldsForGroup(entries: PasswordSummary[]) {
       batch.map((e) => api.getPassword(e.id).catch(() => null))
     );
     const newMap = new Map(customFieldsCache.value);
-    for (const entry of results) {
-      if (entry && entry.custom_fields) {
-        newMap.set(entry.id, entry.custom_fields);
-      }
+    for (let j = 0; j < batch.length; j++) {
+      const entry = results[j];
+      // 无论是否有 custom_fields 都缓存，避免反复请求
+      newMap.set(batch[j].id, entry?.custom_fields ?? {});
     }
     customFieldsCache.value = newMap;
   }
@@ -422,7 +430,7 @@ async function loadCustomFieldsForGroup(entries: PasswordSummary[]) {
 watch(visibleGroups, (groups) => {
   for (const g of groups) {
     if (g.soleTemplate) {
-      loadCustomFieldsForGroup(g.entries);
+      loadCustomFieldsForGroup(g.entries, g.soleTemplate);
     }
   }
 }, { immediate: true });
