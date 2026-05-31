@@ -3,18 +3,19 @@
  * 分类管理视图
  *
  * 顶部按 role（分类，身份维度）切换；下方按 tags（用途维度）分组渲染多个列表。
- * - 同条目带多个标签时，会在每个相关分组里出现一次
- * - 没有标签的条目归入"未分类"分组
- * - 每个标签分组的可见列独立持久化（localStorage: ajot_role_mgmt_columns_v1）
+ * - 默认不展开标签分组：顶部显示标签芯片栏，最近查看的排前面
+ * - 点击标签芯片后才展示对应分组内容
+ * - 若分组内所有条目使用同一模板，自动并排显示模板字段
  * - 双击行进入编辑（复用 PasswordEditDialog）
  */
-import { computed, h, onMounted, ref } from "vue";
+import { computed, h, onMounted, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
-import { SettingsOutline } from "@vicons/ionicons5";
+import { SettingsOutline, CloseCircleOutline } from "@vicons/ionicons5";
 import type { DataTableColumns } from "naive-ui";
 import {
   api,
   formatUtime,
+  type AccountTemplate,
   type PasswordEntry,
   type PasswordSummary,
 } from "../api";
@@ -31,6 +32,60 @@ const selectedRole = ref<string>(""); // "" = 全部
 
 const UNTAGGED_KEY = "__untagged__";
 const UNTAGGED_LABEL = "未分类";
+
+// --- 模板数据 ---
+const templateMap = ref<Map<string, AccountTemplate>>(new Map());
+
+async function loadTemplates() {
+  try {
+    const list = await api.listTemplates();
+    const map = new Map<string, AccountTemplate>();
+    for (const t of list) map.set(t.id, t);
+    templateMap.value = map;
+  } catch { /* 静默 */ }
+}
+
+// --- 标签展开状态 ---
+const expandedTags = ref<Set<string>>(new Set());
+
+// 最近查看标签（localStorage 持久化）
+const RECENT_TAGS_KEY = "ajot_role_mgmt_recent_tags";
+const MAX_RECENT_TAGS = 50;
+
+function loadRecentTags(): string[] {
+  try {
+    const stored = localStorage.getItem(RECENT_TAGS_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch { /* ignore */ }
+  return [];
+}
+
+const recentTags = ref<string[]>(loadRecentTags());
+
+function touchTag(tag: string) {
+  const list = recentTags.value.filter((t) => t !== tag);
+  list.unshift(tag);
+  if (list.length > MAX_RECENT_TAGS) list.length = MAX_RECENT_TAGS;
+  recentTags.value = list;
+  localStorage.setItem(RECENT_TAGS_KEY, JSON.stringify(list));
+}
+
+function toggleTagExpand(tag: string) {
+  const s = new Set(expandedTags.value);
+  if (s.has(tag)) {
+    s.delete(tag);
+  } else {
+    s.add(tag);
+    touchTag(tag); // 记录最近查看
+  }
+  expandedTags.value = s;
+}
+
+function collapseTag(tag: string) {
+  const s = new Set(expandedTags.value);
+  s.delete(tag);
+  expandedTags.value = s;
+}
 
 // --- 列配置 ---
 
@@ -149,9 +204,12 @@ interface TagGroup {
   key: string;
   label: string;
   entries: PasswordSummary[];
+  /** 若分组内所有条目使用同一模板，记录该模板 */
+  soleTemplate?: AccountTemplate;
 }
 
-const groups = computed<TagGroup[]>(() => {
+/** 所有标签分组（含计数），用于顶部芯片渲染 */
+const allTagGroups = computed<TagGroup[]>(() => {
   const tagMap = new Map<string, PasswordSummary[]>();
   const untagged: PasswordSummary[] = [];
   for (const e of filteredByRole.value) {
@@ -165,20 +223,59 @@ const groups = computed<TagGroup[]>(() => {
       tagMap.get(t)!.push(e);
     }
   }
-  // 频次倒序 + 字母序稳定
-  const sorted = [...tagMap.entries()].sort((a, b) => {
-    if (b[1].length !== a[1].length) return b[1].length - a[1].length;
-    return a[0].localeCompare(b[0]);
-  });
-  const result: TagGroup[] = sorted.map(([tag, entries]) => ({
-    key: tag,
-    label: `#${tag}`,
-    entries,
-  }));
+  const result: TagGroup[] = [];
+  for (const [tag, entries] of tagMap.entries()) {
+    const sole = detectSoleTemplate(entries);
+    result.push({ key: tag, label: `#${tag}`, entries, soleTemplate: sole });
+  }
   if (untagged.length) {
-    result.push({ key: UNTAGGED_KEY, label: UNTAGGED_LABEL, entries: untagged });
+    const sole = detectSoleTemplate(untagged);
+    result.push({ key: UNTAGGED_KEY, label: UNTAGGED_LABEL, entries: untagged, soleTemplate: sole });
   }
   return result;
+});
+
+/** 检测分组内是否所有条目使用同一模板 */
+function detectSoleTemplate(entries: PasswordSummary[]): AccountTemplate | undefined {
+  if (entries.length === 0) return undefined;
+  const first = entries[0].template_id;
+  if (!first) return undefined;
+  for (let i = 1; i < entries.length; i++) {
+    if (entries[i].template_id !== first) return undefined;
+  }
+  return templateMap.value.get(first);
+}
+
+/** 标签芯片列表（最近查看的排前面） */
+const sortedTagChips = computed<{ key: string; label: string; count: number; expanded: boolean }[]>(() => {
+  const groups = allTagGroups.value;
+  const recentOrder = recentTags.value;
+  // 建立 tag -> group 映射
+  const groupMap = new Map(groups.map((g) => [g.key, g]));
+  const result: { key: string; label: string; count: number; expanded: boolean }[] = [];
+  const added = new Set<string>();
+  // 先按最近顺序
+  for (const tag of recentOrder) {
+    const g = groupMap.get(tag);
+    if (g && !added.has(tag)) {
+      result.push({ key: g.key, label: g.label, count: g.entries.length, expanded: expandedTags.value.has(g.key) });
+      added.add(tag);
+    }
+  }
+  // 再按频次倒序补充未出现过的
+  const remaining = groups.filter((g) => !added.has(g.key)).sort((a, b) => {
+    if (b.entries.length !== a.entries.length) return b.entries.length - a.entries.length;
+    return a.key.localeCompare(b.key);
+  });
+  for (const g of remaining) {
+    result.push({ key: g.key, label: g.label, count: g.entries.length, expanded: expandedTags.value.has(g.key) });
+  }
+  return result;
+});
+
+/** 当前展开的分组（仅已选中的标签） */
+const visibleGroups = computed<TagGroup[]>(() => {
+  return allTagGroups.value.filter((g) => expandedTags.value.has(g.key));
 });
 
 // --- 行操作 ---
@@ -212,7 +309,7 @@ async function handleOpenUrl(row: PasswordSummary) {
 
 // --- 列定义 ---
 
-function buildColumns(visibleKeys: string[]): DataTableColumns<PasswordSummary> {
+function buildColumns(visibleKeys: string[], tpl?: AccountTemplate): DataTableColumns<PasswordSummary> {
   const all: DataTableColumns<PasswordSummary> = [
     { title: "分类", key: "role", width: 80 },
     {
@@ -274,8 +371,61 @@ function buildColumns(visibleKeys: string[]): DataTableColumns<PasswordSummary> 
       render: (row) => formatUtime(row.utime),
     },
   ];
-  return all.filter((c: any) => visibleKeys.includes(c.key));
+  let cols = all.filter((c: any) => visibleKeys.includes(c.key));
+  // 若分组使用单一模板，追加模板字段列
+  if (tpl && tpl.fields.length) {
+    const tplCols: DataTableColumns<PasswordSummary> = tpl.fields.map((f) => ({
+      title: f.label,
+      key: `_tpl_${f.key}`,
+      width: 140,
+      ellipsis: { tooltip: true },
+      render(row: PasswordSummary) {
+        // 需要从缓存中读取扩展字段
+        const cached = customFieldsCache.value.get(row.id);
+        if (!cached) return h("span", { style: "color: var(--n-text-color-3); font-size: 12px;" }, "…");
+        const val = cached[f.key] || "";
+        if (f.field_type === "secret" && val) return "••••";
+        return val;
+      },
+    }));
+    cols = [...cols, ...tplCols];
+  }
+  return cols;
 }
+
+// --- 扩展字段缓存（用于模板列渲染） ---
+const customFieldsCache = ref<Map<number, Record<string, string>>>(new Map());
+
+async function loadCustomFieldsForGroup(entries: PasswordSummary[]) {
+  const toLoad = entries.filter(
+    (e) => e.has_custom_fields && !customFieldsCache.value.has(e.id)
+  );
+  if (!toLoad.length) return;
+  // 并发加载（限制并发数避免爆栈）
+  const BATCH = 10;
+  for (let i = 0; i < toLoad.length; i += BATCH) {
+    const batch = toLoad.slice(i, i + BATCH);
+    const results = await Promise.all(
+      batch.map((e) => api.getPassword(e.id).catch(() => null))
+    );
+    const newMap = new Map(customFieldsCache.value);
+    for (const entry of results) {
+      if (entry && entry.custom_fields) {
+        newMap.set(entry.id, entry.custom_fields);
+      }
+    }
+    customFieldsCache.value = newMap;
+  }
+}
+
+// 当展开的分组变化时，加载对应的扩展字段
+watch(visibleGroups, (groups) => {
+  for (const g of groups) {
+    if (g.soleTemplate) {
+      loadCustomFieldsForGroup(g.entries);
+    }
+  }
+}, { immediate: true });
 
 function rowProps(row: PasswordSummary) {
   return {
@@ -314,7 +464,9 @@ async function loadData() {
   }
 }
 
-onMounted(loadData);
+onMounted(async () => {
+  await Promise.all([loadData(), loadTemplates()]);
+});
 </script>
 
 <template>
@@ -329,7 +481,24 @@ onMounted(loadData);
           {{ opt.label }}
         </n-radio-button>
       </n-radio-group>
-      <span class="hint">按标签分组浏览（双击进入编辑）</span>
+      <span class="hint">点击标签查看分组（双击进入编辑）</span>
+    </div>
+
+    <!-- 标签芯片栏 -->
+    <div v-if="sortedTagChips.length" class="tag-chips-bar">
+      <div class="tag-chips-scroll">
+        <span
+          v-for="chip in sortedTagChips"
+          :key="chip.key"
+          class="tag-chip"
+          :class="{ active: chip.expanded }"
+          @click="toggleTagExpand(chip.key)"
+        >
+          {{ chip.label }}
+          <span class="chip-count">{{ chip.count }}</span>
+          <span v-if="chip.expanded" class="chip-close" @click.stop="collapseTag(chip.key)">×</span>
+        </span>
+      </div>
     </div>
 
     <div
@@ -392,11 +561,12 @@ onMounted(loadData);
       </div>
     </div>
 
-    <div v-if="groups.length" class="groups">
-      <div v-for="g in groups" :key="g.key" class="group-card">
+    <div v-if="visibleGroups.length" class="groups">
+      <div v-for="g in visibleGroups" :key="g.key" class="group-card">
         <div class="group-header">
           <span class="group-title">{{ g.label }}</span>
           <span class="group-count">{{ g.entries.length }} 条</span>
+          <span v-if="g.soleTemplate" class="group-tpl-badge">📋 {{ g.soleTemplate.name }}</span>
           <n-popover trigger="click" placement="bottom-end">
             <template #trigger>
               <n-button quaternary circle size="small" title="列设置">
@@ -421,9 +591,14 @@ onMounted(loadData);
               </div>
             </div>
           </n-popover>
+          <n-button text size="tiny" @click="collapseTag(g.key)" title="收起">
+            <template #icon>
+              <n-icon><CloseCircleOutline /></n-icon>
+            </template>
+          </n-button>
         </div>
         <n-data-table
-          :columns="buildColumns(getVisibleKeysFor(g.key))"
+          :columns="buildColumns(getVisibleKeysFor(g.key), g.soleTemplate)"
           :data="g.entries"
           :bordered="false"
           size="small"
@@ -433,10 +608,13 @@ onMounted(loadData);
     </div>
 
     <n-empty
-      v-else-if="!loading"
+      v-else-if="!loading && !sortedTagChips.length"
       description="当前分类下暂无数据"
       style="padding: 60px 0"
     />
+    <div v-else-if="!visibleGroups.length && sortedTagChips.length" class="expand-hint">
+      <span>👆 点击上方标签查看对应分组内容</span>
+    </div>
 
     <PasswordEditDialog
       :show="showEditDialog"
@@ -474,6 +652,85 @@ onMounted(loadData);
   color: var(--n-text-color-3, #999);
   font-size: 12px;
   opacity: 0.8;
+}
+
+.tag-chips-bar {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: var(--app-card-bg);
+  border: 1px solid var(--app-card-border);
+  border-radius: 10px;
+  box-shadow: var(--app-shadow-sm);
+  backdrop-filter: blur(8px);
+}
+
+.tag-chips-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--n-color-hover, rgba(0, 0, 0, 0.04));
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.tag-chip:hover {
+  background: var(--n-color-pressed, rgba(0, 0, 0, 0.08));
+  transform: translateY(-1px);
+}
+
+.tag-chip.active {
+  background: var(--n-color-primary, #18a058);
+  color: #fff;
+  border-color: var(--n-color-primary, #18a058);
+  box-shadow: 0 2px 8px rgba(24, 160, 88, 0.25);
+}
+
+.chip-count {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
+.tag-chip.active .chip-count {
+  opacity: 0.85;
+}
+
+.chip-close {
+  margin-left: 2px;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.chip-close:hover {
+  opacity: 1;
+}
+
+.expand-hint {
+  text-align: center;
+  padding: 48px 0;
+  color: var(--n-text-color-3, #999);
+  font-size: 14px;
+}
+
+.group-tpl-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--n-color-hover, rgba(0, 0, 0, 0.04));
+  color: var(--n-text-color-2, #666);
 }
 
 .groups {
