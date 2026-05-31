@@ -25,12 +25,12 @@ path = "src/main.rs"
 
 [[bin]]
 name = "zhmm-cli"
-path = "src/bin/zhmm_cli.rs"
+path = "src/bin/zhmm_cli/main.rs"
 
 # 系列品牌别名：accjot 与 zhmm-cli 完全等价，便于 Account Jotter 时代过渡
 [[bin]]
 name = "accjot"
-path = "src/bin/zhmm_cli.rs"
+path = "src/bin/zhmm_cli/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

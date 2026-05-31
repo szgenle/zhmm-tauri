@@ -4,7 +4,10 @@
 //! 与 GUI 端共享同一份密库格式：V2.0 起默认 v7（magic=`AJOT`），
 //! 兼容读取原 Python 版 .zmb（v6/v5）。
 
-use std::path::{Path, PathBuf};
+mod handlers;
+mod io_helpers;
+
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -12,9 +15,15 @@ use clap::{Parser, Subcommand};
 use zhmm_tauri_lib::{
     errors::{AppError, AppResult},
     io_xlsx,
-    models::{PasswordEntry, PasswordInput, PasswordSummary, DEFAULT_ROLE},
+    models::{PasswordInput, DEFAULT_ROLE},
     totp,
     vault::VaultState,
+};
+
+use handlers::{resolve_entries, resolve_entry, unlock};
+use io_helpers::{
+    gen_random_password, print_entry, print_list, prompt_password, read_password_confirm,
+    read_password_confirm_msg,
 };
 
 #[derive(Parser, Debug)]
@@ -318,206 +327,4 @@ fn run(cli: Cli) -> AppResult<()> {
     }
 
     Ok(())
-}
-
-// ============== 辅助函数 ==============
-
-/// 解析用户输入为具体条目（要求唯一命中，用于 totp/del/get -p）。
-/// 1. 纯数字且能记录 id 精确命中 → 返回该条目
-/// 2. 否则按 user_id / url / desc 子串不区分大小写匹配
-///    - 0 条 → 报错
-///    - 1 条 → 返回
-///    - >1 条 → 列出候选让用户细化
-fn resolve_entry(state: &VaultState, query: &str) -> AppResult<PasswordEntry> {
-    let q = query.trim();
-    if q.is_empty() {
-        return Err(AppError::Invalid("查询字串为空".into()));
-    }
-    // 1) 先试 id
-    if let Ok(id) = q.parse::<i64>() {
-        if let Ok(entry) = state.get(id) {
-            return Ok(entry);
-        }
-    }
-    // 2) 子串搜索
-    let q_low = q.to_lowercase();
-    let items = state.list()?;
-    let hits: Vec<&PasswordSummary> = items
-        .iter()
-        .filter(|i| {
-            i.user_id.to_lowercase().contains(&q_low)
-                || i.url.to_lowercase().contains(&q_low)
-                || i.desc.to_lowercase().contains(&q_low)
-        })
-        .collect();
-    match hits.len() {
-        0 => Err(AppError::Other(format!(
-            "找不到与 “{q}” 匹配的条目（请试 zhmm-cli list 查看现有条目）"
-        ))),
-        1 => state.get(hits[0].id),
-        n => {
-            eprintln!("⚠ 匹配到 {n} 条，请进一步细化关键字或直接传 id：");
-            for i in &hits {
-                eprintln!(
-                    "  id={:<12} role={:<4} user={:<24} url={}",
-                    i.id,
-                    ellipsize(&i.role, 4),
-                    ellipsize(&i.user_id, 24),
-                    i.url
-                );
-            }
-            Err(AppError::Invalid(format!("“{q}” 不唯一")))
-        }
-    }
-}
-
-/// 解析用户输入为一或多条完整条目（用于 get 多命中全部展示）。
-/// 规则同 resolve_entry，但多条命中不报错、全部返回。
-fn resolve_entries(state: &VaultState, query: &str) -> AppResult<Vec<PasswordEntry>> {
-    let q = query.trim();
-    if q.is_empty() {
-        return Err(AppError::Invalid("查询字串为空".into()));
-    }
-    // 1) 先试 id。纯数字命中 → 只返该条，不再做子串搜
-    if let Ok(id) = q.parse::<i64>() {
-        if let Ok(entry) = state.get(id) {
-            return Ok(vec![entry]);
-        }
-    }
-    // 2) 子串搜索
-    let q_low = q.to_lowercase();
-    let items = state.list()?;
-    let hit_ids: Vec<i64> = items
-        .iter()
-        .filter(|i| {
-            i.user_id.to_lowercase().contains(&q_low)
-                || i.url.to_lowercase().contains(&q_low)
-                || i.desc.to_lowercase().contains(&q_low)
-        })
-        .map(|i| i.id)
-        .collect();
-    if hit_ids.is_empty() {
-        return Err(AppError::Other(format!(
-            "找不到与 “{q}” 匹配的条目（请试 zhmm-cli list 查看现有条目）"
-        )));
-    }
-    let mut entries = Vec::with_capacity(hit_ids.len());
-    for id in hit_ids {
-        entries.push(state.get(id)?);
-    }
-    Ok(entries)
-}
-
-fn unlock(password: Option<&str>, file: &Path, account: &str) -> AppResult<VaultState> {
-    let pwd = match password {
-        Some(p) => p.to_string(),
-        None => prompt_password("主密码: ")?,
-    };
-    let state = VaultState::new();
-    state.unlock_with_path(file, account, &pwd)?;
-    Ok(state)
-}
-
-fn prompt_password(prompt: &str) -> AppResult<String> {
-    rpassword::prompt_password(prompt).map_err(|e| AppError::Other(format!("读取密码失败: {e}")))
-}
-
-fn read_password_confirm(env_pwd: Option<&str>) -> AppResult<String> {
-    if let Some(p) = env_pwd {
-        if p.is_empty() {
-            return Err(AppError::Invalid("主密码不能为空".into()));
-        }
-        return Ok(p.to_string());
-    }
-    read_password_confirm_msg("主密码: ", "再次输入: ")
-}
-
-fn read_password_confirm_msg(p1: &str, p2: &str) -> AppResult<String> {
-    let a = prompt_password(p1)?;
-    let b = prompt_password(p2)?;
-    if a != b {
-        return Err(AppError::Invalid("两次输入不一致".into()));
-    }
-    if a.is_empty() {
-        return Err(AppError::Invalid("主密码不能为空".into()));
-    }
-    Ok(a)
-}
-
-fn gen_random_password(len: usize) -> String {
-    use rand::Rng;
-    const CHARS: &[u8] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*-_=+";
-    let mut rng = rand::thread_rng();
-    (0..len)
-        .map(|_| {
-            let i = rng.gen_range(0..CHARS.len());
-            CHARS[i] as char
-        })
-        .collect()
-}
-
-fn print_list(items: &[PasswordSummary]) {
-    if items.is_empty() {
-        println!("(无匹配条目)");
-        return;
-    }
-    println!(
-        "{:<12} {:<8} {:<22} {:<30} {:<5} DESC",
-        "ID", "ROLE", "USER", "URL", "TOTP"
-    );
-    println!("{}", "-".repeat(100));
-    for i in items {
-        println!(
-            "{:<12} {:<8} {:<22} {:<30} {:<5} {}",
-            i.id,
-            ellipsize(&i.role, 8),
-            ellipsize(&i.user_id, 22),
-            ellipsize(&i.url, 30),
-            if i.has_totp { "✓" } else { "" },
-            ellipsize(&i.desc, 40),
-        );
-    }
-    println!("\n共 {} 条", items.len());
-}
-
-fn print_entry(e: &PasswordEntry) {
-    println!("ID:       {}", e.id);
-    println!("Role:     {}", e.role);
-    println!("User:     {}", e.user_id);
-    println!("Password: {}", e.pwd);
-    println!("Phone:    {}", e.phone);
-    println!("Email:    {}", e.email);
-    println!("URL:      {}", e.url);
-    println!("Desc:     {}", e.desc);
-    println!(
-        "Tags:     {}",
-        if e.tags.is_empty() {
-            "—".to_string()
-        } else {
-            e.tags.join(", ")
-        }
-    );
-    println!(
-        "TOTP:     {}",
-        if e.totp_secret.is_empty() {
-            "—"
-        } else {
-            "✓ 已配置（用 `zhmm-cli totp <id>` 取码）"
-        }
-    );
-    println!("History:  {} 条", e.history.len());
-}
-
-/// 简单按字符数截断（CJK 显示宽度不一定准，CLI 场景可接受）
-fn ellipsize(s: &str, n: usize) -> String {
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= n {
-        s.to_string()
-    } else {
-        let take = n.saturating_sub(1);
-        let mut out: String = chars[..take].iter().collect();
-        out.push('…');
-        out
-    }
 }
