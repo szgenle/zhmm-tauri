@@ -106,8 +106,7 @@ impl VaultState {
             entry.totp_digits = input.totp_digits;
             entry.totp_period = input.totp_period;
             entry.template_id = std::mem::take(&mut input.template_id);
-            entry.custom_fields =
-                normalize_custom_fields(std::mem::take(&mut input.custom_fields));
+            entry.custom_fields = normalize_custom_fields(std::mem::take(&mut input.custom_fields));
             entry.utime = now_ts();
 
             if !entry.role.is_empty() && !data.roles.iter().any(|r| r == &entry.role) {

@@ -14,9 +14,10 @@ use super::{
 /// 字段表现为字符串 + UI 提示，不在序列化层区分加密。
 /// `Url` / `Email` / `Phone` 仅为 UI 输入提示与点击动作提示，
 /// 底层仍以 `String` 存以便跨项目复用。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TemplateFieldType {
+    #[default]
     Text,
     Secret,
     Url,
@@ -24,12 +25,6 @@ pub enum TemplateFieldType {
     Phone,
     Multiline,
     Date,
-}
-
-impl Default for TemplateFieldType {
-    fn default() -> Self {
-        Self::Text
-    }
 }
 
 /// 账号模板中的单个字段定义
@@ -192,7 +187,6 @@ pub fn default_templates() -> Vec<AccountTemplate> {
             ],
             utime: now,
         },
-
         AccountTemplate {
             id: "game".into(),
             name: "游戏".into(),

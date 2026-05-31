@@ -89,7 +89,8 @@ mod tests {
         let mut e = PasswordEntry::new();
         e.name = "某银行".into();
         e.template_id = "bank_card".into();
-        e.custom_fields.insert("card_no".into(), "6217 0000 0000 0000".into());
+        e.custom_fields
+            .insert("card_no".into(), "6217 0000 0000 0000".into());
         e.custom_fields.insert("exp_date".into(), "12/29".into());
         let mut data = VaultData::new();
         data.entries.push(e);
@@ -100,7 +101,10 @@ mod tests {
         let parsed: VaultData = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.entries[0].template_id, "bank_card");
         assert_eq!(
-            parsed.entries[0].custom_fields.get("card_no").map(|s| s.as_str()),
+            parsed.entries[0]
+                .custom_fields
+                .get("card_no")
+                .map(|s| s.as_str()),
             Some("6217 0000 0000 0000")
         );
         assert_eq!(parsed.templates.len(), 1);
@@ -112,7 +116,10 @@ mod tests {
     fn empty_extensions_are_omitted_in_json() {
         let data = VaultData::new();
         let json = serde_json::to_string(&data).unwrap();
-        assert!(!json.contains("templates"), "templates 为空时不该出现在 JSON 里");
+        assert!(
+            !json.contains("templates"),
+            "templates 为空时不该出现在 JSON 里"
+        );
         let e = PasswordEntry::new();
         let json = serde_json::to_string(&e).unwrap();
         assert!(!json.contains("custom_fields"));
@@ -153,7 +160,11 @@ mod tests {
             TemplateMatchRule::Keyword("工作".into()), // 与 Role 字面一样但 kind 不同，应保留
         ];
         let out = normalize_match_rules(&raw);
-        assert_eq!(out.len(), 3, "应保留 3 条：1 条 url + 1 条 role + 1 条 keyword");
+        assert_eq!(
+            out.len(),
+            3,
+            "应保留 3 条：1 条 url + 1 条 role + 1 条 keyword"
+        );
         assert!(matches!(
             out[0],
             TemplateMatchRule::UrlContains(ref s) if s == "icbc.com.cn"
@@ -237,7 +248,8 @@ mod tests {
             required: true,
             placeholder: String::new(),
         });
-        t.match_rules.push(TemplateMatchRule::UrlContains("foo.com".into()));
+        t.match_rules
+            .push(TemplateMatchRule::UrlContains("foo.com".into()));
         let pack = TemplatePack::new(vec![t]);
         let json = serde_json::to_string(&pack).unwrap();
         let parsed: TemplatePack = serde_json::from_str(&json).unwrap();
@@ -261,11 +273,7 @@ mod tests {
         let out = normalize_custom_fields(raw);
         assert!(out.contains_key("k"));
         assert!(out.keys().all(|k| !k.is_empty()));
-        let truncated_key_len = out
-            .keys()
-            .map(|k| k.chars().count())
-            .max()
-            .unwrap_or(0);
+        let truncated_key_len = out.keys().map(|k| k.chars().count()).max().unwrap_or(0);
         assert!(truncated_key_len <= CUSTOM_FIELD_KEY_MAX);
         for v in out.values() {
             assert!(v.chars().count() <= CUSTOM_FIELD_VALUE_MAX);
@@ -314,7 +322,11 @@ mod tests {
         });
         data.upgrade();
         let bank = data.templates.iter().find(|t| t.id == "bank_card").unwrap();
-        assert_eq!(bank.match_rules.len(), 1, "用户已自定义 match_rules 不应被 upgrade 覆盖或追加");
+        assert_eq!(
+            bank.match_rules.len(),
+            1,
+            "用户已自定义 match_rules 不应被 upgrade 覆盖或追加"
+        );
         assert!(matches!(
             bank.match_rules[0],
             TemplateMatchRule::UrlContains(ref s) if s == "my-private-bank.local"
