@@ -1,6 +1,6 @@
 [package]
 name = "zhmm-tauri"
-version = "2.0.0-rc.4"
+version = "2.0.0-rc.5"
 description = "账号小本本 · Account Jotter — 小本本系列首作，国密 SM3/SM4 + Argon2id 本地优先账号信息管理器（Tauri + Vue 3 + Rust）。前身 zhmm-tauri。"
 authors = ["szgenle"]
 edition = "2021"
