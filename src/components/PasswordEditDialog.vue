@@ -394,6 +394,9 @@ function onTagPickerUpdate(next: string[]) {
           </n-space>
         </div>
       </n-alert>
+      <n-form-item label="网址">
+        <n-input v-model:value="form.url" placeholder="https://..." />
+      </n-form-item>
       <n-form-item label="名称">
         <n-input v-model:value="form.name" placeholder="例如：微信、招商银行、GitHub" />
       </n-form-item>
@@ -421,9 +424,6 @@ function onTagPickerUpdate(next: string[]) {
       </n-form-item>
       <n-form-item label="邮箱">
         <n-input v-model:value="form.email" />
-      </n-form-item>
-      <n-form-item label="网址">
-        <n-input v-model:value="form.url" placeholder="https://..." />
       </n-form-item>
       <n-form-item label="标签">
         <div style="display: flex; align-items: flex-start; gap: 8px; width: 100%">
