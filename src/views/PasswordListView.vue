@@ -563,7 +563,7 @@ const allColumns: DataTableColumns<PasswordSummary> = [
   {
     title: "操作",
     key: "actions",
-    width: 150,
+    width: 170,
     render(row) {
       return h(NSpace, { size: 4, wrap: false, wrapItem: false }, {
         default: () => [
