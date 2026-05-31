@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, h, nextTick, onMounted, ref } from "vue";
 import { NButton, NIcon, NInput, NTag, NSpace, NCheckbox, NPopover, useMessage, useDialog } from "naive-ui";
+// NSpace 仍被「标签」列使用；操作列已改为内联布局。
 import {
   AddOutline,
   CopyOutline,
@@ -323,7 +324,8 @@ const allColumnConfigs: ColumnConfig[] = [
   { key: "desc", label: "备注" },
   { key: "totp", label: "2FA" },
   { key: "pwd_utime", label: "密码更新时间" },
-  { key: "actions", label: "操作", fixed: true },
+  // 密码列默认可见，但允许用户隐藏（公共环境场景）
+  { key: "actions", label: "密码" },
 ];
 
 // v6 起新增 "name" 列，默认可见。仅在未设过 v6 时从 v5/v4 迁移作为全局默认
@@ -432,7 +434,6 @@ const allColumns: DataTableColumns<PasswordSummary> = [
     key: "userID",
     width: 200,
     render(row) {
-      const pwd = revealedPasswords.value.get(row.id);
       // 账号列只显示 userID；名称、网址由独立列呈现。
       // 若 userID 为空且名称列被隐藏，退一步用 displayName 避免表格出现空行
       const text = row.userID || (visibleColumnKeys.value.includes("name") ? "" : displayName(row));
@@ -453,19 +454,12 @@ const allColumns: DataTableColumns<PasswordSummary> = [
             ]
           )
         : h('span', {}, '');
-      const children: any[] = [nameNode];
-      if (pwd) {
-        children.push(
-          h('div', { style: 'font-family: monospace; font-size: 12px; color: var(--n-text-color-2); margin-top: 2px' }, pwd)
-        );
-      }
-      if (row.has_totp) {
-        children.push(
-          h('div', { style: 'margin-top: 2px' }, [h(TotpCell, { id: row.id })])
-        );
-      }
-      if (children.length === 1) return nameNode;
-      return h('div', {}, children);
+      // 密码明文已在「密码」列展示，账号列不再重复渲染 reveal 后的明文
+      if (!row.has_totp) return nameNode;
+      return h('div', {}, [
+        nameNode,
+        h('div', { style: 'margin-top: 2px' }, [h(TotpCell, { id: row.id })]),
+      ]);
     },
   },
   {
@@ -561,18 +555,42 @@ const allColumns: DataTableColumns<PasswordSummary> = [
     render: (row) => formatUtime(row.pwd_utime),
   },
   {
-    title: "操作",
+    title: "密码",
     key: "actions",
     width: 170,
     render(row) {
-      return h(NSpace, { size: 4, wrap: false, wrapItem: false }, {
-        default: () => [
-          h(NButton, { size: "small", quaternary: true, onClick: () => handleCopy(row) },
-            { default: () => "复制", icon: () => h(NIcon, null, { default: () => h(CopyOutline) }) }),
-          h(NButton, { size: "small", quaternary: true, type: revealedPasswords.value.has(row.id) ? 'warning' : 'default', onClick: () => revealPassword(row) },
-            { default: () => revealedPasswords.value.has(row.id) ? "隐藏" : "显示", icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) }),
-        ],
-      });
+      const revealed = revealedPasswords.value.get(row.id);
+      const display = revealed || "••••••••";
+      return h('div', { class: 'pwd-cell' }, [
+        h(
+          'span',
+          {
+            class: 'pwd-text',
+            title: '点击复制密码',
+            onClick: (e: MouseEvent) => {
+              e.stopPropagation();
+              handleCopy(row);
+            },
+          },
+          display,
+        ),
+        h(
+          NButton,
+          {
+            size: 'small',
+            quaternary: true,
+            circle: true,
+            class: 'pwd-eye',
+            type: revealed ? 'warning' : 'default',
+            title: revealed ? '隐藏密码' : '显示密码',
+            onClick: (e: MouseEvent) => {
+              e.stopPropagation();
+              revealPassword(row);
+            },
+          },
+          { icon: () => h(NIcon, null, { default: () => h(EyeOutline) }) },
+        ),
+      ]);
     },
   },
 ];
@@ -794,6 +812,33 @@ onMounted(async () => {
 }
 .username-copy:hover .username-copy-icon {
   opacity: 1;
+}
+/* 密码列：左侧明文/星号 + 右侧眼睛切换 */
+.pwd-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+.pwd-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color 0.15s;
+}
+.pwd-text:hover {
+  background-color: var(--n-action-color, rgba(0, 0, 0, 0.05));
+}
+.pwd-eye {
+  flex-shrink: 0;
 }
 /* 行展开样式已随内嵌展开能力一同移除。 */
 </style>
