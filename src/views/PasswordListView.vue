@@ -565,7 +565,7 @@ const allColumns: DataTableColumns<PasswordSummary> = [
     expandable: (row) => !!row.has_custom_fields,
     renderExpand,
   },
-  { title: "分类", key: "role", width: 80 },
+  { title: "分类", key: "role", width: 80, ellipsis: { tooltip: true } },
   {
     title: "名称",
     key: "name",
@@ -722,11 +722,44 @@ const allColumns: DataTableColumns<PasswordSummary> = [
   },
 ];
 
+/**
+ * 估算字符串在表格中渲染的像素宽度。
+ * - CJK / 全角字符按 14px 计
+ * - 其他（ASCII 等）按 7.5px 计
+ */
+function estimateTextWidth(text: string): number {
+  let w = 0;
+  for (const ch of text || "") {
+    if (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\u3400-\u4dbf]/.test(ch)) {
+      w += 14;
+    } else {
+      w += 7.5;
+    }
+  }
+  return w;
+}
+
+// 分类列宽度：取「4 个汉字」与「数据中最长分类名」的较大值，
+// 再加上单元格内边距与表头排序图标的固定开销。
+const roleColumnWidth = computed(() => {
+  const minByCJK = 4 * 14; // 4 个汉字
+  let dataMax = 0;
+  for (const row of data.value) {
+    const w = estimateTextWidth(row.role || "");
+    if (w > dataMax) dataMax = w;
+  }
+  const padding = 44; // 单元格 padding(24) + 表头排序/留白(约 20)
+  return Math.ceil(Math.max(minByCJK, dataMax) + padding);
+});
+
 const columns = computed<DataTableColumns<PasswordSummary>>(() => {
-  // expand 列始终保留；其他列按用户偏好过滤
-  return allColumns.filter(
-    (col: any) => col.type === "expand" || visibleColumnKeys.value.includes(col.key),
-  );
+  const roleW = roleColumnWidth.value;
+  // expand 列始终保留；其他列按用户偏好过滤；分类列动态宽度
+  return allColumns
+    .filter(
+      (col: any) => col.type === "expand" || visibleColumnKeys.value.includes(col.key),
+    )
+    .map((col: any) => (col.key === "role" ? { ...col, width: roleW } : col));
 });
 
 const searchInputRef = ref<InstanceType<typeof NInput> | null>(null);
