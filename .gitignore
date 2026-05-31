@@ -28,4 +28,4 @@ dist-ssr
 !/.gitignore
 !/.cargo/
 
-research/
+local/
