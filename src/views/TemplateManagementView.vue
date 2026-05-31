@@ -850,6 +850,7 @@ const hasAllBuiltins = computed(() => {
 :deep(.tpl-act) {
   border: 1px solid var(--app-border-color);
   background: transparent;
+  color: var(--n-text-color);
   padding: 2px 10px;
   font-size: 12px;
   border-radius: 6px;
@@ -859,8 +860,13 @@ const hasAllBuiltins = computed(() => {
 :deep(.tpl-act:hover) {
   background: var(--n-action-color, rgba(0, 0, 0, 0.05));
 }
+:deep(.tpl-act-edit) {
+  color: var(--n-color-primary, #2080f0);
+  border-color: var(--n-color-primary, #2080f0);
+}
 :deep(.tpl-act-del) {
   color: var(--n-color-error, #d03050);
+  border-color: var(--n-color-error, #d03050);
 }
 
 .community-list {
