@@ -33,8 +33,11 @@ jobs:
           - platform: ubuntu-22.04
             args: ""
           # Windows x86_64
+          # 仅产 NSIS：MSI target 拒绝非数字 pre-release identifier（如 -rc.4），
+          # 会触发 `optional pre-release identifier in app version must be numeric-only`，
+          # 详见 tauri 2 wix bundler 校验逻辑。GA 版本（无 pre-release）切回默认即可。
           - platform: windows-latest
-            args: ""
+            args: "--bundles nsis"
 
     runs-on: ${{ matrix.platform }}
     steps:
