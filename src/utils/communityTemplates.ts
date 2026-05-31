@@ -9,7 +9,7 @@
  *  - 当前 alpha 阶段直接以 TS 常量内置，免去文件分发与远程拉取的复杂度
  *  - 后续可平滑切换到「从 GitHub 仓库 fetch JSON 模板包」的方案，
  *    数据结构与本地导入接受的 TemplatePack 完全一致
- *  - 这里不重复内建 4 个默认模板（bank_card / id_card / work_internal / game），
+ *  - 这里不重复内建 3 个默认模板（bank_card / id_card / game），
  *    那些由 default_templates 提供
  */
 import type { AccountTemplate } from "../api";

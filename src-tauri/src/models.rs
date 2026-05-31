@@ -334,7 +334,7 @@ pub enum TemplateMatchRule {
 /// 账号模板：vault 级资源，序列化于 `VaultData.templates`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountTemplate {
-    /// 模板唯一 id（如 `bank_card` / `social` / `work_internal`），推荐 snake_case
+    /// 模板唯一 id（如 `bank_card` / `social` / `game`），推荐 snake_case
     pub id: String,
     /// 模板展示名
     pub name: String,
@@ -462,42 +462,7 @@ pub fn default_templates() -> Vec<AccountTemplate> {
             ],
             utime: now,
         },
-        AccountTemplate {
-            id: "work_internal".into(),
-            name: "工作内网".into(),
-            icon: "💼".into(),
-            fields: vec![
-                TemplateField {
-                    key: "employee_id".into(),
-                    label: "工号".into(),
-                    field_type: TemplateFieldType::Text,
-                    required: false,
-                    placeholder: String::new(),
-                },
-                TemplateField {
-                    key: "vpn".into(),
-                    label: "VPN 地址".into(),
-                    field_type: TemplateFieldType::Url,
-                    required: false,
-                    placeholder: String::new(),
-                },
-                TemplateField {
-                    key: "department".into(),
-                    label: "部门".into(),
-                    field_type: TemplateFieldType::Text,
-                    required: false,
-                    placeholder: String::new(),
-                },
-            ],
-            match_rules: vec![
-                TemplateMatchRule::Role("工作".into()),
-                TemplateMatchRule::Keyword("内网".into()),
-                TemplateMatchRule::Keyword("VPN".into()),
-                TemplateMatchRule::Keyword("OA".into()),
-                TemplateMatchRule::Keyword("工号".into()),
-            ],
-            utime: now,
-        },
+
         AccountTemplate {
             id: "game".into(),
             name: "游戏".into(),
@@ -822,13 +787,7 @@ mod tests {
                 .any(|r| matches!(r, TemplateMatchRule::UrlContains(s) if s.contains("icbc"))),
             "银行卡模板应包含 icbc 域名匹配"
         );
-        let work = templates.iter().find(|t| t.id == "work_internal").unwrap();
-        assert!(
-            work.match_rules
-                .iter()
-                .any(|r| matches!(r, TemplateMatchRule::Role(s) if s == "工作")),
-            "工作内网模板应匹配 role=工作"
-        );
+
         let id_card = templates.iter().find(|t| t.id == "id_card").unwrap();
         assert!(
             id_card
