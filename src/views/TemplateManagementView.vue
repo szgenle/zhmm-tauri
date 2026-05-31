@@ -301,9 +301,15 @@ async function doImport(path: string, overwrite: boolean) {
 
 const showCommunity = ref(false);
 const communityPacks = ref<CommunityTemplatePack[]>(COMMUNITY_PACKS);
+/** 记录正在装入中的包 id */
+const installingPackId = ref<string | null>(null);
+/** 记录已成功装入的包 id（用于短暂显示“已装入”状态） */
+const installedPackIds = ref<Set<string>>(new Set());
 
 /** 从社区预设包一键安装：逐个 upsert。实现上等价于 overwrite=true */
 async function installCommunityPack(pack: CommunityTemplatePack) {
+  if (installingPackId.value) return;
+  installingPackId.value = pack.id;
   let added = 0;
   let updated = 0;
   const existingIds = new Set(templates.value.map((t) => t.id));
@@ -316,6 +322,8 @@ async function installCommunityPack(pack: CommunityTemplatePack) {
       message.error(`模板「${t.name}」安装失败: ${e}`);
     }
   }
+  installingPackId.value = null;
+  installedPackIds.value.add(pack.id);
   message.success(
     `「${pack.name}」已装入：新增 ${added}、更新 ${updated}（共 ${pack.templates.length}）`,
   );
@@ -726,8 +734,14 @@ const hasAllBuiltins = computed(() => {
               <span class="pack-name">{{ pack.name }}</span>
               <span class="pack-count">{{ pack.templates.length }} 个模板</span>
             </div>
-            <n-button size="small" type="primary" @click="installCommunityPack(pack)">
-              装入
+            <n-button
+              size="small"
+              :type="installedPackIds.has(pack.id) ? 'success' : 'primary'"
+              :loading="installingPackId === pack.id"
+              :disabled="installingPackId !== null && installingPackId !== pack.id"
+              @click="installCommunityPack(pack)"
+            >
+              {{ installedPackIds.has(pack.id) ? '✓ 已装入' : '装入' }}
             </n-button>
           </div>
           <div class="pack-desc">{{ pack.description }}</div>
