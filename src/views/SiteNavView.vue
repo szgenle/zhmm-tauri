@@ -496,4 +496,43 @@ onMounted(loadData);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ========== 深色主题：降低卡片视觉密度 ==========
+   卡片数量大时，深色背景下的边框/阴影会显得拥挤；
+   故采用「幽灵卡」策略：默认透明，仅 hover 时浮现轻量容器。 */
+:global(html[data-theme="dark"]) .site-card {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+:global(html[data-theme="dark"]) .site-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+}
+
+/* 标签芯片栏在深色下同样降级，仅作为内容容器存在 */
+:global(html[data-theme="dark"]) .tag-chips-bar {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  padding: 6px 0;
+}
+
+:global(html[data-theme="dark"]) .tag-chip {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+:global(html[data-theme="dark"]) .tag-chip:hover {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+/* favicon 兜底字符在深色下保留弱底，避免「裸字」 */
+:global(html[data-theme="dark"]) .favicon-fallback {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--n-text-color, rgba(255, 255, 255, 0.85));
+}
 </style>
