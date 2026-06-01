@@ -16,6 +16,9 @@ const selectedRole = ref("");
 // 站点建议缓存: domain -> SiteSuggestion
 const suggestCache = ref<Record<string, SiteSuggestion>>({});
 
+// Favicon 缓存: domain -> base64 data-url
+const faviconCache = ref<Record<string, string>>({});
+
 // 防抖搜索
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 const debouncedQuery = ref("");
@@ -47,9 +50,10 @@ function getDisplayName(entry: PasswordSummary): string {
   return domain.replace(/^www\./, "");
 }
 
-/** 获取 favicon URL */
+/** 获取 favicon URL（优先缓存，其次 Google 服务） */
 function getFaviconUrl(url: string): string {
   const domain = extractDomain(url);
+  if (faviconCache.value[domain]) return faviconCache.value[domain];
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
 }
 
@@ -105,28 +109,63 @@ async function loadData() {
   loading.value = true;
   try {
     allData.value = await api.listPasswords();
-    // 异步批量获取站点建议（补全没有 name 的条目）
-    const needSuggest = allData.value.filter(
-      (e) => e.url && !e.name
-    );
-    const domains = new Set(needSuggest.map((e) => extractDomain(e.url)));
-    for (const domain of domains) {
-      if (!suggestCache.value[domain]) {
-        try {
-          const suggestion = await api.suggestSite(domain);
-          if (suggestion.name || suggestion.tags.length > 0) {
-            suggestCache.value[domain] = suggestion;
-          }
-        } catch {
-          // 静默忽略
-        }
-      }
-    }
   } catch (e: any) {
     message.error(`加载数据失败: ${e}`);
   } finally {
     loading.value = false;
   }
+
+  // 以下在后台加载，不阻塞 UI 渲染
+  const withUrl = allData.value.filter((e) => e.url && e.url.trim().length > 0);
+
+  // 异步补全站点名称（限流）
+  const needSuggest = withUrl.filter((e) => !e.name);
+  const suggestDomains = Array.from(new Set(needSuggest.map((e) => extractDomain(e.url))));
+  loadSuggestions(suggestDomains);
+
+  // 异步缓存 favicon（限流）
+  const allDomains = Array.from(new Set(withUrl.map((e) => extractDomain(e.url))));
+  loadFavicons(allDomains);
+}
+
+/** 限流加载站点建议，每次最多 3 个并发 */
+async function loadSuggestions(domains: string[]) {
+  const concurrency = 3;
+  let i = 0;
+  async function next() {
+    while (i < domains.length) {
+      const domain = domains[i++];
+      if (suggestCache.value[domain]) continue;
+      try {
+        const suggestion = await api.suggestSite(domain);
+        if (suggestion.name || suggestion.tags.length > 0) {
+          suggestCache.value[domain] = suggestion;
+        }
+      } catch { /* 静默忽略 */ }
+    }
+  }
+  const workers = Array.from({ length: Math.min(concurrency, domains.length) }, () => next());
+  await Promise.all(workers);
+}
+
+/** 限流加载 favicons，每次最多 3 个并发 */
+async function loadFavicons(domains: string[]) {
+  const concurrency = 3;
+  let i = 0;
+  async function next() {
+    while (i < domains.length) {
+      const domain = domains[i++];
+      if (faviconCache.value[domain]) continue;
+      try {
+        const dataUrl = await api.cacheFavicon(domain);
+        faviconCache.value[domain] = dataUrl;
+      } catch {
+        // 静默忽略
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(concurrency, domains.length) }, () => next());
+  await Promise.all(workers);
 }
 
 /** 打开网址 */

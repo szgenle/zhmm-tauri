@@ -71,6 +71,9 @@ thiserror = "1"
 calamine = "0.26"
 rust_xlsxwriter = "0.79"
 
+# HTTP（favicon 缓存）
+ureq = "2"
+
 # CLI 专用
 clap = { version = "4", features = ["derive", "env"] }
 rpassword = "7"

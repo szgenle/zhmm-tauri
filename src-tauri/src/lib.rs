@@ -81,6 +81,7 @@ pub fn run() {
             commands::bcrypt_verify,
             commands::path_exists,
             commands::legacy_vault_exists,
+            commands::cache_favicon,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

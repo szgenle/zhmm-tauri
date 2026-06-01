@@ -91,6 +91,58 @@ pub fn bcrypt_verify(password: String, hash: String) -> AppResult<bool> {
     bcrypt::verify(password, &hash).map_err(|e| AppError::Crypto(format!("bcrypt verify: {e}")))
 }
 
+// ========== Favicon 缓存 ==========
+
+/// 获取指定域名的 favicon（base64 data-url）。
+/// 优先从本地缓存读取，不存在时从 Google Favicon 服务下载并缓存到磁盘。
+#[tauri::command]
+pub fn cache_favicon(app: tauri::AppHandle, domain: String) -> AppResult<String> {
+    use std::io::Read;
+    use tauri::Manager;
+
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| AppError::Other(format!("获取缓存目录失败: {e}")))?;
+    let favicon_dir = cache_dir.join("favicons");
+    std::fs::create_dir_all(&favicon_dir)?;
+
+    // 域名安全化为文件名
+    let safe_name: String = domain
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' { c } else { '_' })
+        .collect();
+    let file_path = favicon_dir.join(format!("{safe_name}.png"));
+
+    // 命中缓存
+    if file_path.exists() {
+        let data = std::fs::read(&file_path)?;
+        return Ok(format!(
+            "data:image/png;base64,{}",
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data)
+        ));
+    }
+
+    // 下载
+    let url = format!("https://www.google.com/s2/favicons?domain={domain}&sz=32");
+    let resp = ureq::get(&url)
+        .call()
+        .map_err(|e| AppError::Other(format!("下载 favicon 失败: {e}")))?;
+
+    let mut data = Vec::new();
+    resp.into_reader()
+        .take(64 * 1024) // 最多 64KB
+        .read_to_end(&mut data)?;
+
+    // 写入缓存（忽略写入失败）
+    let _ = std::fs::write(&file_path, &data);
+
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data)
+    ))
+}
+
 // ========== 文件存在性 ==========
 
 /// 探测路径是否存在（用于前端校验"创建新库"时不能覆盖已有文件）

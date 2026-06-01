@@ -272,6 +272,10 @@ export const api = {
   legacyVaultExists(): Promise<boolean> {
     return invoke("legacy_vault_exists");
   },
+  // Favicon 缓存
+  cacheFavicon(domain: string): Promise<string> {
+    return invoke("cache_favicon", { domain });
+  },
 };
 
 export interface TotpCode {
