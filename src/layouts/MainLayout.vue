@@ -17,6 +17,7 @@ const tabValue = computed<string>({
       "role-management": "/role-management",
       "template-management": "/template-management",
       "data-management": "/data-management",
+      "site-nav": "/site-nav",
       settings: "/settings",
     };
     router.push(map[val] ?? "/");
@@ -79,6 +80,7 @@ onUnmounted(() => {
           <n-tab name="role-management">分类管理</n-tab>
           <n-tab name="template-management">模板管理</n-tab>
           <n-tab name="data-management">数据管理</n-tab>
+          <n-tab name="site-nav">网站导航</n-tab>
           <n-tab name="settings">系统设置</n-tab>
         </n-tabs>
       </div>

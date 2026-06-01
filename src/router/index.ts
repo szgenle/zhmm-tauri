@@ -42,6 +42,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "数据管理" },
       },
       {
+        path: "site-nav",
+        name: "site-nav",
+        component: () => import("../views/SiteNavView.vue"),
+        meta: { title: "网站导航" },
+      },
+      {
         path: "settings",
         name: "settings",
         component: () => import("../views/SettingsView.vue"),
