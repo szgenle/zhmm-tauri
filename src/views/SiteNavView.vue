@@ -2,9 +2,9 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { SearchOutline } from "@vicons/ionicons5";
 import { useMessage } from "naive-ui";
-import { api, type PasswordSummary, type SiteSuggestion } from "../api";
+import { api, type PasswordEntry, type PasswordSummary, type SiteSuggestion } from "../api";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import PasswordEditDialog from "../components/PasswordEditDialog.vue";
 
 const message = useMessage();
 
@@ -72,11 +72,43 @@ const tagOptions = computed(() => {
   return Array.from(tags).sort();
 });
 
+/** 标签芯片栏：包含名称、计数，未分类放最后 */
+const UNTAGGED_KEY = "__untagged__";
+const tagChips = computed(() => {
+  const counts = new Map<string, number>();
+  let untagged = 0;
+  for (const entry of entriesWithUrl.value) {
+    if (!entry.tags || entry.tags.length === 0) {
+      untagged++;
+      continue;
+    }
+    for (const t of entry.tags) {
+      if (!t) continue;
+      counts.set(t, (counts.get(t) || 0) + 1);
+    }
+  }
+  const arr: { key: string; label: string; count: number }[] = [];
+  for (const t of tagOptions.value) {
+    arr.push({ key: t, label: t, count: counts.get(t) || 0 });
+  }
+  if (untagged > 0) {
+    arr.push({ key: UNTAGGED_KEY, label: "未分类", count: untagged });
+  }
+  return arr;
+});
+
+function selectTag(key: string) {
+  // 再次点击选中的 chip 取消选中
+  selectedTag.value = selectedTag.value === key ? "" : key;
+}
+
 /** 过滤后的条目 */
 const filteredEntries = computed(() => {
   let result = entriesWithUrl.value;
   // 标签筛选
-  if (selectedTag.value) {
+  if (selectedTag.value === UNTAGGED_KEY) {
+    result = result.filter((e) => !e.tags || e.tags.length === 0);
+  } else if (selectedTag.value) {
     result = result.filter((e) => e.tags.includes(selectedTag.value));
   }
   // 搜索过滤
@@ -195,14 +227,16 @@ async function handleOpen(entry: PasswordSummary) {
   }
 }
 
-/** 复制网址 */
-async function handleCopy(entry: PasswordSummary, event: MouseEvent) {
+/** 右键编辑记录 */
+const showEditDialog = ref(false);
+const editEntry = ref<PasswordEntry | null>(null);
+async function handleEdit(entry: PasswordSummary, event: MouseEvent) {
   event.preventDefault();
   try {
-    await writeText(entry.url);
-    message.success("已复制网址");
+    editEntry.value = await api.getPassword(entry.id);
+    showEditDialog.value = true;
   } catch (e: any) {
-    message.error(`复制失败: ${e}`);
+    message.error(`加载失败: ${e}`);
   }
 }
 
@@ -225,14 +259,30 @@ onMounted(loadData);
           <n-icon :component="SearchOutline" />
         </template>
       </n-input>
-      <n-select
-        v-model:value="selectedTag"
-        :options="[
-          { label: '全部标签', value: '' },
-          ...tagOptions.map((t) => ({ label: t, value: t })),
-        ]"
-        style="width: 140px"
-      />
+    </div>
+
+    <!-- 标签芯片栏 -->
+    <div v-if="tagChips.length" class="tag-chips-bar">
+      <div class="tag-chips-scroll">
+        <span
+          class="tag-chip"
+          :class="{ active: selectedTag === '' }"
+          @click="selectedTag = ''"
+        >
+          全部
+          <span class="chip-count">{{ entriesWithUrl.length }}</span>
+        </span>
+        <span
+          v-for="chip in tagChips"
+          :key="chip.key"
+          class="tag-chip"
+          :class="{ active: selectedTag === chip.key }"
+          @click="selectTag(chip.key)"
+        >
+          {{ chip.label }}
+          <span class="chip-count">{{ chip.count }}</span>
+        </span>
+      </div>
     </div>
 
     <!-- 空状态 -->
@@ -257,7 +307,7 @@ onMounted(loadData);
             :key="entry.id"
             class="site-card"
             @click="handleOpen(entry)"
-            @contextmenu="handleCopy(entry, $event)"
+            @contextmenu="handleEdit(entry, $event)"
           >
             <div class="card-icon">
               <img
@@ -271,11 +321,19 @@ onMounted(loadData);
               </span>
             </div>
             <span class="card-name">{{ getDisplayName(entry) }}</span>
-            <span class="card-url" :title="entry.url">{{ extractDomain(entry.url) }}</span>
+            <span class="card-user" :title="entry.userID || '未设置账号'">{{ entry.userID || '—' }}</span>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- 编辑对话框（右键卡片触发） -->
+    <PasswordEditDialog
+      :show="showEditDialog"
+      :edit-entry="editEntry"
+      @update:show="showEditDialog = $event"
+      @saved="loadData"
+    />
   </n-spin>
 </template>
 
@@ -284,7 +342,59 @@ onMounted(loadData);
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
+}
+
+.tag-chips-bar {
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  background: var(--app-card-bg);
+  border: 1px solid var(--app-border-color, rgba(0, 0, 0, 0.06));
+  border-radius: 10px;
+  box-shadow: var(--app-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.04));
+  backdrop-filter: blur(8px);
+}
+
+.tag-chips-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--n-color-hover, rgba(0, 0, 0, 0.04));
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.tag-chip:hover {
+  background: var(--n-color-pressed, rgba(0, 0, 0, 0.08));
+  transform: translateY(-1px);
+}
+
+.tag-chip.active {
+  background: var(--n-color-primary, #18a058);
+  color: #fff;
+  border-color: var(--n-color-primary, #18a058);
+  box-shadow: 0 2px 8px rgba(24, 160, 88, 0.25);
+}
+
+.chip-count {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
+.tag-chip.active .chip-count {
+  opacity: 0.85;
 }
 
 .site-nav-groups {
@@ -377,7 +487,7 @@ onMounted(loadData);
   white-space: nowrap;
 }
 
-.card-url {
+.card-user {
   font-size: 10px;
   color: var(--n-text-color-2, #666);
   opacity: 0.75;
