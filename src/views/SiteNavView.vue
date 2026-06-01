@@ -11,7 +11,7 @@ const message = useMessage();
 const loading = ref(false);
 const allData = ref<PasswordSummary[]>([]);
 const searchQuery = ref("");
-const selectedRole = ref("");
+const selectedTag = ref("");
 
 // 站点建议缓存: domain -> SiteSuggestion
 const suggestCache = ref<Record<string, SiteSuggestion>>({});
@@ -61,21 +61,23 @@ const entriesWithUrl = computed(() =>
   allData.value.filter((e) => e.url && e.url.trim().length > 0)
 );
 
-/** 所有分类选项 */
-const roleOptions = computed(() => {
-  const roles = new Set<string>();
+/** 所有标签选项 */
+const tagOptions = computed(() => {
+  const tags = new Set<string>();
   for (const entry of entriesWithUrl.value) {
-    if (entry.role) roles.add(entry.role);
+    for (const t of entry.tags) {
+      if (t) tags.add(t);
+    }
   }
-  return Array.from(roles).sort();
+  return Array.from(tags).sort();
 });
 
 /** 过滤后的条目 */
 const filteredEntries = computed(() => {
   let result = entriesWithUrl.value;
-  // 分类筛选
-  if (selectedRole.value) {
-    result = result.filter((e) => e.role === selectedRole.value);
+  // 标签筛选
+  if (selectedTag.value) {
+    result = result.filter((e) => e.tags.includes(selectedTag.value));
   }
   // 搜索过滤
   const q = debouncedQuery.value;
@@ -90,16 +92,20 @@ const filteredEntries = computed(() => {
   return result;
 });
 
-/** 按 role 分组 */
+/** 按标签分组：每个条目按其首个标签归入对应分组，无标签归入"未分类" */
 const groupedEntries = computed(() => {
   const groups: Record<string, PasswordSummary[]> = {};
   for (const entry of filteredEntries.value) {
-    const role = entry.role || "未分类";
-    if (!groups[role]) groups[role] = [];
-    groups[role].push(entry);
+    const tag = (entry.tags && entry.tags.length > 0) ? entry.tags[0] : "未分类";
+    if (!groups[tag]) groups[tag] = [];
+    groups[tag].push(entry);
   }
-  // 按分类名排序
-  const sorted = Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  // 按标签名排序，"未分类" 放最后
+  const sorted = Object.entries(groups).sort(([a], [b]) => {
+    if (a === "未分类") return 1;
+    if (b === "未分类") return -1;
+    return a.localeCompare(b);
+  });
   return sorted;
 });
 
@@ -220,10 +226,10 @@ onMounted(loadData);
         </template>
       </n-input>
       <n-select
-        v-model:value="selectedRole"
+        v-model:value="selectedTag"
         :options="[
-          { label: '全部分类', value: '' },
-          ...roleOptions.map((r) => ({ label: r, value: r })),
+          { label: '全部标签', value: '' },
+          ...tagOptions.map((t) => ({ label: t, value: t })),
         ]"
         style="width: 140px"
       />
@@ -243,8 +249,8 @@ onMounted(loadData);
 
     <!-- 分组卡片宫格 -->
     <div v-else class="site-nav-groups">
-      <div v-for="[role, entries] in groupedEntries" :key="role" class="site-nav-group">
-        <h3 class="group-title">{{ role }}</h3>
+      <div v-for="[tag, entries] in groupedEntries" :key="tag" class="site-nav-group">
+        <h3 class="group-title">{{ tag }} <span class="group-count">{{ entries.length }}</span></h3>
         <div class="site-grid">
           <div
             v-for="entry in entries"
@@ -287,15 +293,18 @@ onMounted(loadData);
   gap: 24px;
 }
 
-.site-nav-group {
-  /* 每个分类分组 */
-}
-
 .group-title {
   font-size: 14px;
   font-weight: 600;
   margin: 0 0 12px 4px;
   opacity: 0.7;
+}
+
+.group-count {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.6;
+  margin-left: 6px;
 }
 
 .site-grid {
