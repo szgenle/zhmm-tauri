@@ -111,7 +111,13 @@ pub fn cache_favicon(app: tauri::AppHandle, domain: String) -> AppResult<String>
     // 域名安全化为文件名
     let safe_name: String = domain
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '.' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let file_path = favicon_dir.join(format!("{safe_name}.png"));
     let failed_marker = favicon_dir.join(format!("{safe_name}.failed"));
@@ -143,9 +149,7 @@ pub fn cache_favicon(app: tauri::AppHandle, domain: String) -> AppResult<String>
     let data = match result {
         Ok(resp) => {
             let mut buf = Vec::new();
-            resp.into_reader()
-                .take(64 * 1024)
-                .read_to_end(&mut buf)?;
+            resp.into_reader().take(64 * 1024).read_to_end(&mut buf)?;
             if buf.is_empty() {
                 let _ = std::fs::write(&failed_marker, b"");
                 return Err(AppError::Other("favicon 为空".into()));
@@ -158,9 +162,7 @@ pub fn cache_favicon(app: tauri::AppHandle, domain: String) -> AppResult<String>
             match agent.get(&url_http).call() {
                 Ok(resp) => {
                     let mut buf = Vec::new();
-                    resp.into_reader()
-                        .take(64 * 1024)
-                        .read_to_end(&mut buf)?;
+                    resp.into_reader().take(64 * 1024).read_to_end(&mut buf)?;
                     if buf.is_empty() {
                         let _ = std::fs::write(&failed_marker, b"");
                         return Err(AppError::Other("favicon 为空".into()));
