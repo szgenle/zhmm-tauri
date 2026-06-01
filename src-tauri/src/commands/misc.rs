@@ -94,7 +94,8 @@ pub fn bcrypt_verify(password: String, hash: String) -> AppResult<bool> {
 // ========== Favicon 缓存 ==========
 
 /// 获取指定域名的 favicon（base64 data-url）。
-/// 优先从本地缓存读取，不存在时从 Google Favicon 服务下载并缓存到磁盘。
+/// 优先从本地缓存读取；未命中时直接从网站抓取 /favicon.ico 并缓存。
+/// 下载失败会写入 ".failed" 标记，后续不再重试。
 #[tauri::command]
 pub fn cache_favicon(app: tauri::AppHandle, domain: String) -> AppResult<String> {
     use std::io::Read;
@@ -113,6 +114,7 @@ pub fn cache_favicon(app: tauri::AppHandle, domain: String) -> AppResult<String>
         .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' { c } else { '_' })
         .collect();
     let file_path = favicon_dir.join(format!("{safe_name}.png"));
+    let failed_marker = favicon_dir.join(format!("{safe_name}.failed"));
 
     // 命中缓存
     if file_path.exists() {
@@ -123,18 +125,58 @@ pub fn cache_favicon(app: tauri::AppHandle, domain: String) -> AppResult<String>
         ));
     }
 
-    // 下载
-    let url = format!("https://www.google.com/s2/favicons?domain={domain}&sz=32");
-    let resp = ureq::get(&url)
-        .call()
-        .map_err(|e| AppError::Other(format!("下载 favicon 失败: {e}")))?;
+    // 已知失败，不再重试
+    if failed_marker.exists() {
+        return Err(AppError::Other("favicon 已标记为不可用".into()));
+    }
 
-    let mut data = Vec::new();
-    resp.into_reader()
-        .take(64 * 1024) // 最多 64KB
-        .read_to_end(&mut data)?;
+    // 直接从网站抓取 favicon.ico（3 秒超时）
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(3))
+        .timeout_read(std::time::Duration::from_secs(3))
+        .redirects(3)
+        .build();
 
-    // 写入缓存（忽略写入失败）
+    let url = format!("https://{domain}/favicon.ico");
+    let result = agent.get(&url).call();
+
+    let data = match result {
+        Ok(resp) => {
+            let mut buf = Vec::new();
+            resp.into_reader()
+                .take(64 * 1024)
+                .read_to_end(&mut buf)?;
+            if buf.is_empty() {
+                let _ = std::fs::write(&failed_marker, b"");
+                return Err(AppError::Other("favicon 为空".into()));
+            }
+            buf
+        }
+        Err(_) => {
+            // HTTPS 失败则尝试 HTTP
+            let url_http = format!("http://{domain}/favicon.ico");
+            match agent.get(&url_http).call() {
+                Ok(resp) => {
+                    let mut buf = Vec::new();
+                    resp.into_reader()
+                        .take(64 * 1024)
+                        .read_to_end(&mut buf)?;
+                    if buf.is_empty() {
+                        let _ = std::fs::write(&failed_marker, b"");
+                        return Err(AppError::Other("favicon 为空".into()));
+                    }
+                    buf
+                }
+                Err(e) => {
+                    // 标记失败，后续不再重试
+                    let _ = std::fs::write(&failed_marker, b"");
+                    return Err(AppError::Other(format!("下载 favicon 失败: {e}")));
+                }
+            }
+        }
+    };
+
+    // 写入缓存
     let _ = std::fs::write(&file_path, &data);
 
     Ok(format!(

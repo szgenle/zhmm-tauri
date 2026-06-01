@@ -50,11 +50,10 @@ function getDisplayName(entry: PasswordSummary): string {
   return domain.replace(/^www\./, "");
 }
 
-/** 获取 favicon URL（优先缓存，其次 Google 服务） */
-function getFaviconUrl(url: string): string {
+/** 获取已缓存的 favicon data-url，未缓存时返回空串 */
+function getCachedFavicon(url: string): string {
   const domain = extractDomain(url);
-  if (faviconCache.value[domain]) return faviconCache.value[domain];
-  return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+  return faviconCache.value[domain] || "";
 }
 
 /** 过滤出有 url 的条目 */
@@ -148,24 +147,35 @@ async function loadSuggestions(domains: string[]) {
   await Promise.all(workers);
 }
 
-/** 限流加载 favicons，每次最多 3 个并发 */
+/** 限流加载 favicons，批量更新减少 re-render */
 async function loadFavicons(domains: string[]) {
   const concurrency = 3;
   let i = 0;
+  const pending: Record<string, string> = {};
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  function flush() {
+    const keys = Object.keys(pending);
+    if (keys.length > 0) {
+      faviconCache.value = { ...faviconCache.value, ...pending };
+      keys.forEach((k) => delete pending[k]);
+    }
+    timer = null;
+  }
   async function next() {
     while (i < domains.length) {
       const domain = domains[i++];
       if (faviconCache.value[domain]) continue;
       try {
         const dataUrl = await api.cacheFavicon(domain);
-        faviconCache.value[domain] = dataUrl;
-      } catch {
-        // 静默忽略
-      }
+        pending[domain] = dataUrl;
+        if (Object.keys(pending).length >= 5) flush();
+        else if (!timer) timer = setTimeout(flush, 200);
+      } catch { /* skip */ }
     }
   }
   const workers = Array.from({ length: Math.min(concurrency, domains.length) }, () => next());
   await Promise.all(workers);
+  flush();
 }
 
 /** 打开网址 */
@@ -190,13 +200,7 @@ async function handleCopy(entry: PasswordSummary, event: MouseEvent) {
   }
 }
 
-/** favicon 加载失败时显示首字 fallback */
-function handleImgError(event: Event) {
-  const img = event.target as HTMLImageElement;
-  img.style.display = "none";
-  const fallback = img.nextElementSibling as HTMLElement;
-  if (fallback) fallback.style.display = "flex";
-}
+
 
 onMounted(loadData);
 </script>
@@ -251,22 +255,17 @@ onMounted(loadData);
           >
             <div class="card-icon">
               <img
-                :src="getFaviconUrl(entry.url)"
+                v-if="getCachedFavicon(entry.url)"
+                :src="getCachedFavicon(entry.url)"
                 :alt="getDisplayName(entry)"
                 class="favicon"
-                @error="handleImgError"
               />
-              <span class="favicon-fallback" style="display: none">
+              <span v-else class="favicon-fallback">
                 {{ getDisplayName(entry).charAt(0) }}
               </span>
             </div>
             <span class="card-name">{{ getDisplayName(entry) }}</span>
-            <n-tooltip trigger="hover" :delay="600">
-              <template #trigger>
-                <span class="card-url">{{ extractDomain(entry.url) }}</span>
-              </template>
-              {{ entry.url }}
-            </n-tooltip>
+            <span class="card-url" :title="entry.url">{{ extractDomain(entry.url) }}</span>
           </div>
         </div>
       </div>
@@ -314,15 +313,17 @@ onMounted(loadData);
   padding: 14px 8px;
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  background: var(--n-color, rgba(255, 255, 255, 0.6));
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
+  background: var(--app-card-bg, #ffffff);
   border: 1px solid var(--app-border-color, rgba(0, 0, 0, 0.06));
+  box-shadow: var(--app-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.04));
+  backdrop-filter: blur(8px);
+  contain: layout style;
 }
 
 .site-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  border-color: var(--n-border-color-hover, rgba(0, 0, 0, 0.12));
+  transform: translateY(var(--app-hover-lift, -2px));
+  box-shadow: var(--app-shadow-md, 0 4px 16px rgba(0, 0, 0, 0.06));
 }
 
 .site-card:active {
@@ -348,7 +349,7 @@ onMounted(loadData);
   width: 32px;
   height: 32px;
   border-radius: 6px;
-  background: var(--n-color-target, #e8e8e8);
+  background: var(--app-border-color, rgba(0, 0, 0, 0.06));
   color: var(--n-text-color, #333);
   font-size: 16px;
   font-weight: 600;
@@ -369,7 +370,8 @@ onMounted(loadData);
 
 .card-url {
   font-size: 10px;
-  color: var(--n-text-color-3, #999);
+  color: var(--n-text-color-2, #666);
+  opacity: 0.75;
   max-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
