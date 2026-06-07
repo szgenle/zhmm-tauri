@@ -79,14 +79,14 @@ const filtered = computed<PasswordSummary[]>(() => {
   if (selectedRole.value) {
     result = result.filter((row) => row.role === selectedRole.value);
   }
-  // 按标签筛选（仅匹配每条记录的第一个标签）
+  // 按标签筛选：选中某标签后，所有 tags 包含该标签的记录都显示（含一级和细分位置）
   if (selectedTags.value.length > 0) {
     const wantUncategorized = selectedTags.value.includes(UNCATEGORIZED_TAG);
     const realTags = selectedTags.value.filter((t) => t !== UNCATEGORIZED_TAG);
     result = result.filter((row) => {
-      const primary = (row.tags || []).find((t) => !!t);
-      const matchUncategorized = wantUncategorized && !primary;
-      const matchReal = realTags.length > 0 && !!primary && realTags.includes(primary);
+      const tags = (row.tags || []).filter((t) => !!t);
+      const matchUncategorized = wantUncategorized && tags.length === 0;
+      const matchReal = realTags.length > 0 && tags.some((t) => realTags.includes(t));
       if (wantUncategorized && realTags.length === 0) return matchUncategorized;
       if (!wantUncategorized) return matchReal;
       // 同时选中"未分类"和具体标签：满足任一即可

@@ -204,32 +204,68 @@ async function copyContact(value: string, kind: "手机号" | "邮箱") {
 interface TagGroup {
   key: string;
   label: string;
+  /** 展开时显示的全部记录：所有 tags 含该 tag 的记录（无论位置） */
   entries: PasswordSummary[];
+  /** chip 上显示的计数：仅按记录的第一个标签（一级标签）聚合 */
+  primaryCount: number;
   /** 若分组内所有条目使用同一模板，记录该模板 */
   soleTemplate?: AccountTemplate;
 }
 
-/** 所有标签分组（含计数），用于顶部芯片渲染。仅以每条记录的第一个标签为分组键 */
+/**
+ * 所有标签分组：
+ * - chip 出现条件 + count：仅按 tags[0]（一级标签）聚合
+ * - 分组展开内容：包含所有 tags 含该标签的记录（一级或细分位置均可）
+ */
 const allTagGroups = computed<TagGroup[]>(() => {
-  const tagMap = new Map<string, PasswordSummary[]>();
-  const untagged: PasswordSummary[] = [];
+  // 1) 仅按 primary 计数，决定哪些 tag 作为 chip 出现
+  const primaryCount = new Map<string, number>();
+  let untaggedCount = 0;
   for (const e of filteredByRole.value) {
     const primary = (e.tags || []).find(Boolean);
     if (!primary) {
+      untaggedCount += 1;
+      continue;
+    }
+    primaryCount.set(primary, (primaryCount.get(primary) || 0) + 1);
+  }
+  // 2) 展开内容：每条记录可在多个 tag 组中出现（用于 chip 选中后展示全部相关）
+  const fullEntries = new Map<string, PasswordSummary[]>();
+  const untagged: PasswordSummary[] = [];
+  for (const e of filteredByRole.value) {
+    const tags = (e.tags || []).filter(Boolean);
+    if (tags.length === 0) {
       untagged.push(e);
       continue;
     }
-    if (!tagMap.has(primary)) tagMap.set(primary, []);
-    tagMap.get(primary)!.push(e);
+    for (const t of tags) {
+      // 仅为 primary 出现过的 tag 建组（与 chip 列表对齐）
+      if (!primaryCount.has(t)) continue;
+      if (!fullEntries.has(t)) fullEntries.set(t, []);
+      fullEntries.get(t)!.push(e);
+    }
   }
   const result: TagGroup[] = [];
-  for (const [tag, entries] of tagMap.entries()) {
+  for (const [tag, count] of primaryCount.entries()) {
+    const entries = fullEntries.get(tag) || [];
     const sole = detectSoleTemplate(entries);
-    result.push({ key: tag, label: `#${tag}`, entries, soleTemplate: sole });
+    result.push({
+      key: tag,
+      label: `#${tag}`,
+      entries,
+      primaryCount: count,
+      soleTemplate: sole,
+    });
   }
-  if (untagged.length) {
+  if (untaggedCount) {
     const sole = detectSoleTemplate(untagged);
-    result.push({ key: UNTAGGED_KEY, label: UNTAGGED_LABEL, entries: untagged, soleTemplate: sole });
+    result.push({
+      key: UNTAGGED_KEY,
+      label: UNTAGGED_LABEL,
+      entries: untagged,
+      primaryCount: untaggedCount,
+      soleTemplate: sole,
+    });
   }
   return result;
 });
@@ -248,7 +284,7 @@ function detectSoleTemplate(entries: PasswordSummary[]): AccountTemplate | undef
   return templateMap.value.get(soleId);
 }
 
-/** 标签芯片列表（最近查看的排前面） */
+/** 标签芯片列表（最近查看的排前面），count 按一级聚合显示 */
 const sortedTagChips = computed<{ key: string; label: string; count: number; expanded: boolean }[]>(() => {
   const groups = allTagGroups.value;
   const recentOrder = recentTags.value;
@@ -260,17 +296,17 @@ const sortedTagChips = computed<{ key: string; label: string; count: number; exp
   for (const tag of recentOrder) {
     const g = groupMap.get(tag);
     if (g && !added.has(tag)) {
-      result.push({ key: g.key, label: g.label, count: g.entries.length, expanded: expandedTags.value.has(g.key) });
+      result.push({ key: g.key, label: g.label, count: g.primaryCount, expanded: expandedTags.value.has(g.key) });
       added.add(tag);
     }
   }
-  // 再按频次倒序补充未出现过的
+  // 再按 primary 计数倒序补充未出现过的
   const remaining = groups.filter((g) => !added.has(g.key)).sort((a, b) => {
-    if (b.entries.length !== a.entries.length) return b.entries.length - a.entries.length;
+    if (b.primaryCount !== a.primaryCount) return b.primaryCount - a.primaryCount;
     return a.key.localeCompare(b.key);
   });
   for (const g of remaining) {
-    result.push({ key: g.key, label: g.label, count: g.entries.length, expanded: expandedTags.value.has(g.key) });
+    result.push({ key: g.key, label: g.label, count: g.primaryCount, expanded: expandedTags.value.has(g.key) });
   }
   return result;
 });

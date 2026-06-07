@@ -144,7 +144,7 @@ function selectTag(key: string) {
   }
 }
 
-/** 过滤后的条目（标签筛选只比对第一个标签） */
+/** 过滤后的条目（标签筛选：tags 数组包含选中标签即匹配，无论位置） */
 const filteredEntries = computed(() => {
   let result = entriesWithUrl.value;
   // 标签筛选
@@ -152,10 +152,7 @@ const filteredEntries = computed(() => {
     result = result.filter((e) => !((e.tags || []).find((t) => !!t)));
   } else if (selectedTag.value) {
     const want = selectedTag.value;
-    result = result.filter((e) => {
-      const primary = (e.tags || []).find((t) => !!t);
-      return primary === want;
-    });
+    result = result.filter((e) => (e.tags || []).includes(want));
   }
   // 搜索过滤
   const q = debouncedQuery.value;
@@ -170,8 +167,18 @@ const filteredEntries = computed(() => {
   return result;
 });
 
-/** 按标签分组：每个条目按其首个标签归入对应分组，无标签归入"未分类" */
+/** 按标签分组：
+ * - 未选标签时：每条按其首个标签归入对应分组，无标签归入"未分类"
+ * - 选中某具体标签时：所有匹配记录统一归入该标签分组（避免分散到各自一级组）
+ */
 const groupedEntries = computed(() => {
+  // 选中具体标签：单一分组渲染
+  if (selectedTag.value && selectedTag.value !== UNTAGGED_KEY) {
+    return [[selectedTag.value, filteredEntries.value]] as [string, PasswordSummary[]][];
+  }
+  if (selectedTag.value === UNTAGGED_KEY) {
+    return [["未分类", filteredEntries.value]] as [string, PasswordSummary[]][];
+  }
   const groups: Record<string, PasswordSummary[]> = {};
   for (const entry of filteredEntries.value) {
     const tag = (entry.tags && entry.tags.length > 0) ? entry.tags[0] : "未分类";
