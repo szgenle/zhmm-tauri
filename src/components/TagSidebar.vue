@@ -70,15 +70,25 @@ const collapsed = ref(false);
       <div v-if="!tagList.length" class="empty-hint">
         暂无标签。<br />编辑条目时添加标签即可在此筛选。
       </div>
-      <div
-        v-for="item in tagList"
-        :key="item.tag"
-        class="tag-item"
-        @click="toggle(item.tag)"
-      >
-        <n-checkbox :checked="item.checked" @update:checked="toggle(item.tag)" />
-        <span class="tag-label">#{{ item.tag }}</span>
-        <span class="tag-count">({{ item.count }})</span>
+      <div v-else class="tag-chips-wrap">
+        <span
+          class="tag-chip"
+          :class="{ active: props.selectedTags.length === 0 }"
+          @click="clearSelection"
+        >
+          全部
+          <span class="chip-count">{{ props.entries.length }}</span>
+        </span>
+        <span
+          v-for="item in tagList"
+          :key="item.tag"
+          class="tag-chip"
+          :class="{ active: item.checked }"
+          @click="toggle(item.tag)"
+        >
+          {{ item.tag }}
+          <span class="chip-count">{{ item.count }}</span>
+        </span>
       </div>
     </div>
   </div>
@@ -122,29 +132,48 @@ const collapsed = ref(false);
   padding: 8px 0;
   opacity: 0.8;
 }
-.tag-item {
+.tag-chips-wrap {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tag-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 6px;
-  cursor: pointer;
-  border-radius: 6px;
-  transition: background 0.15s ease, transform 0.15s ease;
-}
-.tag-item:hover {
-  background: var(--n-color-hover, rgba(0,0,0,0.04));
-  transform: translateX(2px);
-}
-.tag-label {
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 16px;
   font-size: 13px;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  background: var(--n-color-hover, rgba(0, 0, 0, 0.04));
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
 }
-.tag-count {
+.tag-chip:hover {
+  background: var(--n-color-pressed, rgba(0, 0, 0, 0.08));
+  transform: translateY(-1px);
+}
+.tag-chip.active {
+  background: var(--n-color-primary, #18a058);
+  color: #fff;
+  border-color: var(--n-color-primary, #18a058);
+  box-shadow: 0 2px 8px rgba(24, 160, 88, 0.25);
+}
+.chip-count {
   font-size: 11px;
-  color: var(--n-text-color-3, #999);
   opacity: 0.7;
+  margin-left: 2px;
+}
+.tag-chip.active .chip-count {
+  opacity: 0.85;
+}
+
+/* 深色主题适配 */
+:global(html[data-theme="dark"]) .tag-chip {
+  background: rgba(255, 255, 255, 0.05);
+}
+:global(html[data-theme="dark"]) .tag-chip:hover {
+  background: rgba(255, 255, 255, 0.10);
 }
 </style>
