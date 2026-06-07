@@ -13,6 +13,28 @@ const allData = ref<PasswordSummary[]>([]);
 const searchQuery = ref("");
 const selectedTag = ref("");
 
+// 最近查看标签（与分类管理共享 localStorage）
+const RECENT_TAGS_KEY = "ajot_role_mgmt_recent_tags";
+const MAX_RECENT_TAGS = 50;
+
+function loadRecentTags(): string[] {
+  try {
+    const stored = localStorage.getItem(RECENT_TAGS_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch { /* ignore */ }
+  return [];
+}
+
+const recentTags = ref<string[]>(loadRecentTags());
+
+function touchTag(tag: string) {
+  const list = recentTags.value.filter((t) => t !== tag);
+  list.unshift(tag);
+  if (list.length > MAX_RECENT_TAGS) list.length = MAX_RECENT_TAGS;
+  recentTags.value = list;
+  localStorage.setItem(RECENT_TAGS_KEY, JSON.stringify(list));
+}
+
 // 站点建议缓存: domain -> SiteSuggestion
 const suggestCache = ref<Record<string, SiteSuggestion>>({});
 
@@ -72,7 +94,7 @@ const tagOptions = computed(() => {
   return Array.from(tags).sort();
 });
 
-/** 标签芯片栏：包含名称、计数，未分类放最后 */
+/** 标签芯片栏：包含名称、计数，按最近使用排序，未分类放最后 */
 const UNTAGGED_KEY = "__untagged__";
 const tagChips = computed(() => {
   const counts = new Map<string, number>();
@@ -87,8 +109,26 @@ const tagChips = computed(() => {
       counts.set(t, (counts.get(t) || 0) + 1);
     }
   }
+  // 按最近使用排序，未出现在 recentTags 中的按频次倒序 + 字母序
+  const recentOrder = recentTags.value;
+  const allTags = tagOptions.value;
+  const added = new Set<string>();
   const arr: { key: string; label: string; count: number }[] = [];
-  for (const t of tagOptions.value) {
+  // 先按最近顺序
+  for (const tag of recentOrder) {
+    if (allTags.includes(tag) && !added.has(tag)) {
+      arr.push({ key: tag, label: tag, count: counts.get(tag) || 0 });
+      added.add(tag);
+    }
+  }
+  // 再补充未出现过的（按频次倒序 + 字母序）
+  const remaining = allTags.filter((t) => !added.has(t)).sort((a, b) => {
+    const ca = counts.get(a) || 0;
+    const cb = counts.get(b) || 0;
+    if (cb !== ca) return cb - ca;
+    return a.localeCompare(b);
+  });
+  for (const t of remaining) {
     arr.push({ key: t, label: t, count: counts.get(t) || 0 });
   }
   if (untagged > 0) {
@@ -99,7 +139,12 @@ const tagChips = computed(() => {
 
 function selectTag(key: string) {
   // 再次点击选中的 chip 取消选中
-  selectedTag.value = selectedTag.value === key ? "" : key;
+  if (selectedTag.value === key) {
+    selectedTag.value = "";
+  } else {
+    selectedTag.value = key;
+    if (key && key !== UNTAGGED_KEY) touchTag(key);
+  }
 }
 
 /** 过滤后的条目 */
@@ -132,10 +177,20 @@ const groupedEntries = computed(() => {
     if (!groups[tag]) groups[tag] = [];
     groups[tag].push(entry);
   }
-  // 按标签名排序，"未分类" 放最后
+  // 按最近使用排序，"未分类" 放最后
+  const recentOrder = recentTags.value;
   const sorted = Object.entries(groups).sort(([a], [b]) => {
     if (a === "未分类") return 1;
     if (b === "未分类") return -1;
+    const ai = recentOrder.indexOf(a);
+    const bi = recentOrder.indexOf(b);
+    // 两个都在 recent 中：按 recent 顺序
+    if (ai >= 0 && bi >= 0) return ai - bi;
+    // 仅 a 在 recent 中：a 排前面
+    if (ai >= 0) return -1;
+    // 仅 b 在 recent 中：b 排前面
+    if (bi >= 0) return 1;
+    // 两个都不在 recent 中：按字母序
     return a.localeCompare(b);
   });
   return sorted;
