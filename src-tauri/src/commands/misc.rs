@@ -26,15 +26,36 @@ pub fn suggest_site(
 
 /// 导出合并后的完整词典到指定路径，返回条目数
 /// 同时会自动补充密码库中已录入但词典未收录的站点（空名/空标签，供外部分类）
+/// `filter_tags` 为空时导出全部；非空时只导出含有指定标签的条目
+/// `exclude_tags` 非空时排除含有指定标签的条目
 #[tauri::command]
 pub fn export_site_catalog(
     path: String,
+    filter_tags: Vec<String>,
+    exclude_tags: Vec<String>,
     user_catalog: State<'_, site_catalog::UserCatalogState>,
     vault: State<'_, VaultState>,
 ) -> AppResult<usize> {
     // 尝试从密码库收集 hosts（未解锁时跳过，不影响导出）
     let vault_hosts = vault.collect_url_hosts().unwrap_or_default();
-    site_catalog::export_catalog(&user_catalog, &path, &vault_hosts)
+    site_catalog::export_catalog(&user_catalog, &path, &vault_hosts, &filter_tags, &exclude_tags)
+}
+
+/// 列出所有可用标签（词典标签 + 密码库中用户自定义标签，去重、排序）
+#[tauri::command]
+pub fn list_catalog_tags(
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+    vault: State<'_, VaultState>,
+) -> Vec<String> {
+    let mut tags: std::collections::BTreeSet<String> =
+        site_catalog::all_tags(&user_catalog).into_iter().collect();
+    // 合并密码库中用户自己添加的标签
+    if let Ok(counts) = vault.collect_tag_counts() {
+        for (tag, _) in counts {
+            tags.insert(tag);
+        }
+    }
+    tags.into_iter().collect()
 }
 
 /// 从 JSON 文件导入为用户词典（完全替换用户层），返回导入条目数

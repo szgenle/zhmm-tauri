@@ -206,24 +206,33 @@ impl VaultState {
         Ok(updated)
     }
 
-    /// 收集密码库中所有条目的 URL host（去重、小写），用于导出词典时补充
-    pub fn collect_url_hosts(&self) -> AppResult<Vec<String>> {
+    /// 收集密码库中所有条目的 URL host 及其标签（同 host 多条目标签合并），用于导出词典时补充
+    pub fn collect_url_hosts(&self) -> AppResult<Vec<(String, Vec<String>)>> {
         let guard = self.data.read();
         let data = guard.as_ref().ok_or(AppError::Locked)?;
-        let mut hosts: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut host_tags: std::collections::HashMap<String, std::collections::BTreeSet<String>> =
+            std::collections::HashMap::new();
         for entry in &data.entries {
             let url_str = entry.url.trim();
             if url_str.is_empty() {
                 continue;
             }
-            // 尝试提取 host
             let host = extract_host_from_url(url_str);
             if !host.is_empty() {
-                hosts.insert(host);
+                let tag_set = host_tags.entry(host).or_default();
+                for tag in &entry.tags {
+                    let t = tag.trim().to_string();
+                    if !t.is_empty() {
+                        tag_set.insert(t);
+                    }
+                }
             }
         }
-        let mut result: Vec<String> = hosts.into_iter().collect();
-        result.sort();
+        let mut result: Vec<(String, Vec<String>)> = host_tags
+            .into_iter()
+            .map(|(h, ts)| (h, ts.into_iter().collect()))
+            .collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(result)
     }
 }

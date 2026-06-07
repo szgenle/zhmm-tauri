@@ -229,9 +229,13 @@ export const api = {
   suggestSite(urlOrHost: string): Promise<SiteSuggestion> {
     return invoke("suggest_site", { urlOrHost });
   },
-  /** 导出合并后的完整词典到指定路径，返回条目数 */
-  exportSiteCatalog(path: string): Promise<number> {
-    return invoke("export_site_catalog", { path });
+  /** 导出合并后的完整词典到指定路径，返回条目数。filterTags 为空数组时导出全部，excludeTags 排除指定标签 */
+  exportSiteCatalog(path: string, filterTags: string[] = [], excludeTags: string[] = []): Promise<number> {
+    return invoke("export_site_catalog", { path, filterTags, excludeTags });
+  },
+  /** 列出词典中所有出现过的标签（去重、排序） */
+  listCatalogTags(): Promise<string[]> {
+    return invoke("list_catalog_tags");
   },
   /** 从 JSON 文件导入为用户词典（完全替换用户层），返回条目数 */
   importSiteCatalog(path: string): Promise<number> {

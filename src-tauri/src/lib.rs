@@ -73,6 +73,7 @@ pub fn run() {
             commands::list_site_catalog,
             commands::suggest_site,
             commands::export_site_catalog,
+            commands::list_catalog_tags,
             commands::import_site_catalog,
             commands::reset_site_catalog,
             commands::has_user_catalog,

@@ -1,3 +1,7 @@
+<script lang="ts">
+export const UNCATEGORIZED_TAG = "__uncategorized__";
+</script>
+
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { PasswordSummary } from "../api";
@@ -13,17 +17,23 @@ const emit = defineEmits<{
 
 interface TagInfo {
   tag: string;
+  label: string;
   count: number;
   checked: boolean;
+  uncategorized?: boolean;
 }
 
 const tagList = computed<TagInfo[]>(() => {
+  // 仅以每条记录的第一个标签（一级标签）为分组键聚合
   const counter = new Map<string, number>();
+  let uncategorizedCount = 0;
   for (const entry of props.entries) {
-    if (!entry.tags) continue;
-    for (const t of entry.tags) {
-      if (t) counter.set(t, (counter.get(t) || 0) + 1);
+    const primary = (entry.tags || []).find((t) => !!t);
+    if (!primary) {
+      uncategorizedCount += 1;
+      continue;
     }
+    counter.set(primary, (counter.get(primary) || 0) + 1);
   }
   // 按频次倒序 + 字母序稳定
   const sorted = [...counter.entries()].sort((a, b) => {
@@ -31,11 +41,22 @@ const tagList = computed<TagInfo[]>(() => {
     return a[0].localeCompare(b[0]);
   });
   const selected = new Set(props.selectedTags);
-  return sorted.map(([tag, count]) => ({
+  const list: TagInfo[] = sorted.map(([tag, count]) => ({
     tag,
+    label: tag,
     count,
     checked: selected.has(tag),
   }));
+  if (uncategorizedCount > 0) {
+    list.push({
+      tag: UNCATEGORIZED_TAG,
+      label: "未分类",
+      count: uncategorizedCount,
+      checked: selected.has(UNCATEGORIZED_TAG),
+      uncategorized: true,
+    });
+  }
+  return list;
 });
 
 function toggle(tag: string) {
@@ -83,10 +104,10 @@ const collapsed = ref(false);
           v-for="item in tagList"
           :key="item.tag"
           class="tag-chip"
-          :class="{ active: item.checked }"
+          :class="{ active: item.checked, uncategorized: item.uncategorized }"
           @click="toggle(item.tag)"
         >
-          {{ item.tag }}
+          {{ item.label }}
           <span class="chip-count">{{ item.count }}</span>
         </span>
       </div>
@@ -167,6 +188,14 @@ const collapsed = ref(false);
 }
 .tag-chip.active .chip-count {
   opacity: 0.85;
+}
+.tag-chip.uncategorized {
+  font-style: italic;
+  color: var(--n-text-color-3, #888);
+}
+.tag-chip.uncategorized.active {
+  font-style: normal;
+  color: #fff;
 }
 
 /* 深色主题适配 */

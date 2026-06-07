@@ -209,20 +209,18 @@ interface TagGroup {
   soleTemplate?: AccountTemplate;
 }
 
-/** 所有标签分组（含计数），用于顶部芯片渲染 */
+/** 所有标签分组（含计数），用于顶部芯片渲染。仅以每条记录的第一个标签为分组键 */
 const allTagGroups = computed<TagGroup[]>(() => {
   const tagMap = new Map<string, PasswordSummary[]>();
   const untagged: PasswordSummary[] = [];
   for (const e of filteredByRole.value) {
-    const tags = (e.tags || []).filter(Boolean);
-    if (tags.length === 0) {
+    const primary = (e.tags || []).find(Boolean);
+    if (!primary) {
       untagged.push(e);
       continue;
     }
-    for (const t of tags) {
-      if (!tagMap.has(t)) tagMap.set(t, []);
-      tagMap.get(t)!.push(e);
-    }
+    if (!tagMap.has(primary)) tagMap.set(primary, []);
+    tagMap.get(primary)!.push(e);
   }
   const result: TagGroup[] = [];
   for (const [tag, entries] of tagMap.entries()) {

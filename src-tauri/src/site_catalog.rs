@@ -261,32 +261,76 @@ pub fn suggest_merged(url_or_host: &str, user_state: &UserCatalogState) -> SiteS
 
 // ========== 导入/导出/重置 ==========
 
-/// 导出合并后的完整词典到指定路径，同时补充密码库中尚未收录的站点（空名+空标签）
+/// 收集词典中所有出现过的标签（去重、排序），用于前端筛选
+pub fn all_tags(user_state: &UserCatalogState) -> Vec<String> {
+    let entries = all_entries_merged(user_state);
+    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for entry in &entries {
+        for tag in &entry.tags {
+            let t = tag.trim().to_string();
+            if !t.is_empty() {
+                set.insert(t);
+            }
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// 导出合并后的完整词典到指定路径，同时补充密码库中尚未收录的站点
+/// `filter_tags` 为空时导出全部；非空时只导出含有任一指定标签的条目
+/// `exclude_tags` 非空时排除含有任一指定标签的条目（对词典条目和密码库补充条目均生效）
 pub fn export_catalog(
     user_state: &UserCatalogState,
     dest: &str,
-    vault_hosts: &[String],
+    vault_hosts: &[(String, Vec<String>)],
+    filter_tags: &[String],
+    exclude_tags: &[String],
 ) -> AppResult<usize> {
     let entries = all_entries_merged(user_state);
-    // 已有的 host 集合
-    let existing: std::collections::HashSet<&str> =
-        entries.iter().map(|e| e.host.as_str()).collect();
 
-    // 从密码库补充尚未收录的 host
-    let mut extra_entries: Vec<SiteCatalogEntry> = Vec::new();
-    for host in vault_hosts {
-        let h = host.trim().to_lowercase();
-        if !h.is_empty() && !existing.contains(h.as_str()) {
-            extra_entries.push(SiteCatalogEntry {
-                host: h,
-                name: String::new(),
-                tags: Vec::new(),
-            });
+    // 如果指定了 include 标签筛选，只保留含有任一标签的条目
+    let entries: Vec<SiteCatalogEntry> = if filter_tags.is_empty() {
+        entries
+    } else {
+        let filter_set: std::collections::HashSet<&str> =
+            filter_tags.iter().map(|t| t.as_str()).collect();
+        entries
+            .into_iter()
+            .filter(|e| e.tags.iter().any(|t| filter_set.contains(t.as_str())))
+            .collect()
+    };
+
+    // 已有的 host 集合（用 owned String 避免借用冲突）
+    let existing: std::collections::HashSet<String> =
+        entries.iter().map(|e| e.host.clone()).collect();
+
+    // 从密码库补充尚未收录的 host（带标签，仅在未指定 include 筛选时补充）
+    let mut all = entries;
+    if filter_tags.is_empty() {
+        for (host, tags) in vault_hosts {
+            let h = host.trim().to_lowercase();
+            if !h.is_empty() && !existing.contains(&h) {
+                all.push(SiteCatalogEntry {
+                    host: h,
+                    name: String::new(),
+                    tags: tags.clone(),
+                });
+            }
         }
     }
 
-    let mut all = entries;
-    all.extend(extra_entries);
+    // 排除含有指定标签的条目（对词典和密码库补充条目均生效）
+    let all: Vec<SiteCatalogEntry> = if exclude_tags.is_empty() {
+        all
+    } else {
+        let exclude_set: std::collections::HashSet<&str> =
+            exclude_tags.iter().map(|t| t.as_str()).collect();
+        all.into_iter()
+            .filter(|e| !e.tags.iter().any(|t| exclude_set.contains(t.as_str())))
+            .collect()
+    };
+
+    let mut all = all;
     all.sort_by(|a, b| a.host.cmp(&b.host));
     let count = all.len();
 

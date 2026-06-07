@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
-import { DiceOutline, PricetagsOutline } from "@vicons/ionicons5";
+import { DiceOutline, PricetagsOutline, SparklesOutline } from "@vicons/ionicons5";
 import {
   api,
   type AccountTemplate,
@@ -204,34 +204,57 @@ watch(totpEnabled, (v) => {
   }
 });
 
-// 网址自动建议标签（防抖）
+// 网址自动建议标签（防抖 + 手动触发）
+const suggestingTags = ref(false);
+
+async function runUrlSuggest(showToast = false) {
+  const trimmed = (form.url || "").trim();
+  if (!trimmed) {
+    if (showToast) message.warning("请先填写网址");
+    return;
+  }
+  suggestingTags.value = true;
+  try {
+    const suggestion = await api.suggestSite(trimmed);
+    // 名称为空时，用词典建议名称自动回填
+    if (suggestion.name && !form.name?.trim()) {
+      form.name = suggestion.name;
+    }
+    let added = 0;
+    if (suggestion.matched && suggestion.tags.length > 0) {
+      const existing = new Set(form.tags);
+      for (const t of suggestion.tags) {
+        if (!existing.has(t)) {
+          form.tags.push(t);
+          existing.add(t);
+          added += 1;
+        }
+      }
+    }
+    if (showToast) {
+      if (added > 0) {
+        message.success(`已自动追加 ${added} 个标签`);
+      } else if (suggestion.matched) {
+        message.info("已有相关标签，无需追加");
+      } else {
+        message.info("词典中暂无该网址的标签建议");
+      }
+    }
+  } catch (e) {
+    if (showToast) message.error(`获取建议失败: ${e}`);
+    // 自动模式静默忽略
+  } finally {
+    suggestingTags.value = false;
+  }
+}
+
 let urlSuggestTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
   () => form.url,
   (newUrl) => {
     if (urlSuggestTimer) clearTimeout(urlSuggestTimer);
-    const trimmed = (newUrl || "").trim();
-    if (!trimmed) return;
-    urlSuggestTimer = setTimeout(async () => {
-      try {
-        const suggestion = await api.suggestSite(trimmed);
-        // 名称为空时，用词典建议名称自动回填
-        if (suggestion.name && !form.name?.trim()) {
-          form.name = suggestion.name;
-        }
-        if (suggestion.matched && suggestion.tags.length > 0) {
-          const existing = new Set(form.tags);
-          for (const t of suggestion.tags) {
-            if (!existing.has(t)) {
-              form.tags.push(t);
-              existing.add(t);
-            }
-          }
-        }
-      } catch {
-        // 静默忽略建议失败
-      }
-    }, 600);
+    if (!(newUrl || "").trim()) return;
+    urlSuggestTimer = setTimeout(() => runUrlSuggest(false), 600);
   }
 );
 
@@ -428,6 +451,17 @@ function onTagPickerUpdate(next: string[]) {
       <n-form-item label="标签">
         <div style="display: flex; align-items: flex-start; gap: 8px; width: 100%">
           <n-dynamic-tags v-model:value="form.tags" style="flex: 1" />
+          <n-button
+            size="small"
+            secondary
+            :loading="suggestingTags"
+            :disabled="!form.url?.trim()"
+            @click="runUrlSuggest(true)"
+            title="根据网址自动匹配并追加标签"
+          >
+            <template #icon><n-icon><SparklesOutline /></n-icon></template>
+            自动
+          </n-button>
           <n-button
             size="small"
             secondary

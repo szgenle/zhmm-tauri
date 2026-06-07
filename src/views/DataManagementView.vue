@@ -58,7 +58,28 @@ async function checkUserCatalog() {
 // 页面初始化时检查
 checkUserCatalog();
 
+// ========== 导出标签筛选 ==========
+const showExportFilter = ref(false);
+const allCatalogTags = ref<string[]>([]);
+const selectedExportTags = ref<string[]>([]);
+const excludedExportTags = ref<string[]>([]);
+
 async function handleExportCatalog() {
+  // 先加载所有标签，弹出筛选对话框
+  catalogBusy.value = true;
+  try {
+    allCatalogTags.value = await api.listCatalogTags();
+  } catch {
+    allCatalogTags.value = [];
+  } finally {
+    catalogBusy.value = false;
+  }
+  selectedExportTags.value = [];
+  excludedExportTags.value = [];
+  showExportFilter.value = true;
+}
+
+async function confirmExportCatalog() {
   const path = await saveDialog({
     title: "导出网站词典",
     defaultPath: `site_catalog_${new Date().toISOString().slice(0, 10)}.json`,
@@ -67,8 +88,15 @@ async function handleExportCatalog() {
   if (!path) return;
   catalogBusy.value = true;
   try {
-    const count = await api.exportSiteCatalog(path as string);
-    message.success(`已导出 ${count} 个站点（含密码库中的网站）`);
+    const count = await api.exportSiteCatalog(path as string, selectedExportTags.value, excludedExportTags.value);
+    const hints: string[] = [];
+    if (selectedExportTags.value.length > 0) hints.push(`包含 ${selectedExportTags.value.length} 个标签`);
+    if (excludedExportTags.value.length > 0) hints.push(`排除 ${excludedExportTags.value.length} 个标签`);
+    const hint = hints.length > 0
+      ? `已导出 ${count} 个站点（${hints.join("，")}）`
+      : `已导出 ${count} 个站点（含密码库中的网站）`;
+    message.success(hint);
+    showExportFilter.value = false;
   } catch (e: any) {
     message.error(`导出失败: ${e}`);
   } finally {
@@ -430,6 +458,51 @@ async function confirmBackup() {
     <BackupListDialog v-model:show="showBackupListDialog" />
     <TagManagementDialog v-model:show="showTagManagement" @changed="() => {}" />
     <SiteCatalogDialog v-model:show="showSiteCatalog" />
+
+    <!-- 导出词典标签筛选 -->
+    <n-modal
+      v-model:show="showExportFilter"
+      preset="card"
+      title="导出词典 — 标签筛选"
+      style="width: 520px"
+    >
+      <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 12px">
+        可按标签筛选要导出的内容，也可排除不想导出的标签分类。两者都不选则导出全部。
+      </n-text>
+      <n-form-item label="只包含（可选）" label-placement="left" :show-feedback="false" style="margin-bottom: 12px">
+        <n-select
+          v-model:value="selectedExportTags"
+          multiple
+          filterable
+          placeholder="不选 = 不限；可搜索/多选"
+          :options="allCatalogTags.filter(t => !excludedExportTags.includes(t)).map(t => ({ label: t, value: t }))"
+          max-tag-count="responsive"
+        />
+      </n-form-item>
+      <n-form-item label="排除标签" label-placement="left" :show-feedback="false" style="margin-bottom: 12px">
+        <n-select
+          v-model:value="excludedExportTags"
+          multiple
+          filterable
+          placeholder="选择要排除的标签"
+          :options="allCatalogTags.filter(t => !selectedExportTags.includes(t)).map(t => ({ label: t, value: t }))"
+          max-tag-count="responsive"
+        />
+      </n-form-item>
+      <n-text v-if="selectedExportTags.length > 0 || excludedExportTags.length > 0" depth="3" style="font-size: 12px">
+        <span v-if="selectedExportTags.length > 0">仅导出含「{{ selectedExportTags.join('、') }}」的站点</span>
+        <span v-if="selectedExportTags.length > 0 && excludedExportTags.length > 0">，</span>
+        <span v-if="excludedExportTags.length > 0">排除含「{{ excludedExportTags.join('、') }}」的站点</span>
+      </n-text>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showExportFilter = false">取消</n-button>
+          <n-button type="primary" :loading="catalogBusy" @click="confirmExportCatalog">
+            确认导出
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 

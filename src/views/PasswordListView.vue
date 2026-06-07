@@ -23,7 +23,7 @@ import {
 import TotpCell from "../components/TotpCell.vue";
 import PasswordEditDialog from "../components/PasswordEditDialog.vue";
 import PasswordHistoryDialog from "../components/PasswordHistoryDialog.vue";
-import TagSidebar from "../components/TagSidebar.vue";
+import TagSidebar, { UNCATEGORIZED_TAG } from "../components/TagSidebar.vue";
 import WelcomeWidget from "../components/WelcomeWidget.vue";
 import { usePasswordReveal } from "../composables/usePasswordReveal";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -79,11 +79,19 @@ const filtered = computed<PasswordSummary[]>(() => {
   if (selectedRole.value) {
     result = result.filter((row) => row.role === selectedRole.value);
   }
-  // 按标签筛选
+  // 按标签筛选（仅匹配每条记录的第一个标签）
   if (selectedTags.value.length > 0) {
-    result = result.filter((row) =>
-      selectedTags.value.every((t) => (row.tags || []).includes(t))
-    );
+    const wantUncategorized = selectedTags.value.includes(UNCATEGORIZED_TAG);
+    const realTags = selectedTags.value.filter((t) => t !== UNCATEGORIZED_TAG);
+    result = result.filter((row) => {
+      const primary = (row.tags || []).find((t) => !!t);
+      const matchUncategorized = wantUncategorized && !primary;
+      const matchReal = realTags.length > 0 && !!primary && realTags.includes(primary);
+      if (wantUncategorized && realTags.length === 0) return matchUncategorized;
+      if (!wantUncategorized) return matchReal;
+      // 同时选中"未分类"和具体标签：满足任一即可
+      return matchUncategorized || matchReal;
+    });
   }
   // 按搜索关键词筛选
   const q = normalize(searchQuery.value);

@@ -83,13 +83,12 @@ const entriesWithUrl = computed(() =>
   allData.value.filter((e) => e.url && e.url.trim().length > 0)
 );
 
-/** 所有标签选项 */
+/** 所有标签选项（仅取每条记录的第一个标签作为一级分组键） */
 const tagOptions = computed(() => {
   const tags = new Set<string>();
   for (const entry of entriesWithUrl.value) {
-    for (const t of entry.tags) {
-      if (t) tags.add(t);
-    }
+    const primary = (entry.tags || []).find((t) => !!t);
+    if (primary) tags.add(primary);
   }
   return Array.from(tags).sort();
 });
@@ -100,14 +99,12 @@ const tagChips = computed(() => {
   const counts = new Map<string, number>();
   let untagged = 0;
   for (const entry of entriesWithUrl.value) {
-    if (!entry.tags || entry.tags.length === 0) {
+    const primary = (entry.tags || []).find((t) => !!t);
+    if (!primary) {
       untagged++;
       continue;
     }
-    for (const t of entry.tags) {
-      if (!t) continue;
-      counts.set(t, (counts.get(t) || 0) + 1);
-    }
+    counts.set(primary, (counts.get(primary) || 0) + 1);
   }
   // 按最近使用排序，未出现在 recentTags 中的按频次倒序 + 字母序
   const recentOrder = recentTags.value;
@@ -147,14 +144,18 @@ function selectTag(key: string) {
   }
 }
 
-/** 过滤后的条目 */
+/** 过滤后的条目（标签筛选只比对第一个标签） */
 const filteredEntries = computed(() => {
   let result = entriesWithUrl.value;
   // 标签筛选
   if (selectedTag.value === UNTAGGED_KEY) {
-    result = result.filter((e) => !e.tags || e.tags.length === 0);
+    result = result.filter((e) => !((e.tags || []).find((t) => !!t)));
   } else if (selectedTag.value) {
-    result = result.filter((e) => e.tags.includes(selectedTag.value));
+    const want = selectedTag.value;
+    result = result.filter((e) => {
+      const primary = (e.tags || []).find((t) => !!t);
+      return primary === want;
+    });
   }
   // 搜索过滤
   const q = debouncedQuery.value;
