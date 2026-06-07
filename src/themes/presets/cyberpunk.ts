@@ -72,6 +72,8 @@ export const cyberpunkPreset: ThemePreset = {
   },
   cssVars: {
     "--app-bg": "linear-gradient(160deg, #f5f3ff 0%, #ede9fe 100%)",
+    "--app-bg-solid": "#f5f3ff",
+    "--app-bg-image": "linear-gradient(160deg, #f5f3ff 0%, #ede9fe 100%)",
     "--app-card-bg": "rgba(245, 243, 255, 0.9)",
     "--app-card-border": "rgba(124, 58, 237, 0.15)",
     "--app-header-bg": "rgba(245, 243, 255, 0.85)",
@@ -86,6 +88,8 @@ export const cyberpunkPreset: ThemePreset = {
   },
   cssDarkVars: {
     "--app-bg": "linear-gradient(160deg, #0a0814 0%, #120e24 50%, #0f0c1e 100%)",
+    "--app-bg-solid": "#0a0814",
+    "--app-bg-image": "linear-gradient(160deg, #0a0814 0%, #120e24 50%, #0f0c1e 100%)",
     "--app-card-bg": "rgba(15, 12, 30, 0.92)",
     "--app-card-border": "rgba(167, 139, 250, 0.2)",
     "--app-header-bg": "rgba(10, 8, 20, 0.85)",

@@ -281,5 +281,8 @@ async function confirmBackup() {
 <style scoped>
 .data-mgmt {
   max-width: 700px;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: none;
 }
 </style>

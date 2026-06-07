@@ -246,8 +246,14 @@ onMounted(loadData);
 </script>
 
 <template>
-  <n-spin :show="loading">
+  <div class="site-nav-page">
+    <!-- 加载状态 -->
+    <div v-if="loading" class="site-nav-loading">
+      <n-spin size="medium" />
+    </div>
+
     <!-- 顶部工具栏 -->
+    <div v-else class="site-nav-body">
     <div class="site-nav-toolbar">
       <n-input
         v-model:value="searchQuery"
@@ -334,10 +340,28 @@ onMounted(loadData);
       @update:show="showEditDialog = $event"
       @saved="loadData"
     />
-  </n-spin>
+    </div>
+  </div>
 </template>
 
 <style scoped>
+.site-nav-page {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: none;
+}
+
+.site-nav-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+}
+
+.site-nav-body {
+  height: 100%;
+}
+
 .site-nav-toolbar {
   display: flex;
   align-items: center;

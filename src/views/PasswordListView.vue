@@ -706,12 +706,14 @@ onMounted(async () => {
     />
     <n-data-table
       v-else
+      class="pwd-table"
       :columns="columns"
       :data="filtered"
       :loading="loading"
       :bordered="false"
       :pagination="{ pageSize: 20 }"
       :row-props="rowProps"
+      :flex-height="true"
     />
 
     <!-- 右键上下文菜单 -->
@@ -750,14 +752,15 @@ onMounted(async () => {
 <style scoped>
 .pwd-page {
   display: flex;
-  /* header 52px + content padding 20px*2 = 92px */
-  height: calc(100vh - 92px);
+  height: 100%;
   overflow: hidden;
   gap: 0;
 }
 .pwd-main {
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 0;
   min-height: 0;
 }
@@ -773,6 +776,11 @@ onMounted(async () => {
   box-shadow: var(--app-shadow-sm);
   backdrop-filter: blur(8px);
   gap: 12px;
+  flex-shrink: 0;
+}
+.pwd-table {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .toolbar-left {
   display: flex;

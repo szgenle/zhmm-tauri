@@ -72,6 +72,8 @@ export const glassPreset: ThemePreset = {
   },
   cssVars: {
     "--app-bg": "linear-gradient(135deg, #f0f4ff 0%, #fafbff 50%, #f5f0ff 100%)",
+    "--app-bg-solid": "#f0f4ff",
+    "--app-bg-image": "linear-gradient(135deg, #f0f4ff 0%, #fafbff 50%, #f5f0ff 100%)",
     "--app-card-bg": "rgba(255, 255, 255, 0.72)",
     "--app-card-border": "rgba(255, 255, 255, 0.9)",
     "--app-header-bg": "rgba(255, 255, 255, 0.65)",
@@ -86,6 +88,8 @@ export const glassPreset: ThemePreset = {
   },
   cssDarkVars: {
     "--app-bg": "linear-gradient(135deg, #1a1c24 0%, #1e2028 50%, #1c1a26 100%)",
+    "--app-bg-solid": "#1a1c24",
+    "--app-bg-image": "linear-gradient(135deg, #1a1c24 0%, #1e2028 50%, #1c1a26 100%)",
     "--app-card-bg": "rgba(40, 44, 52, 0.78)",
     "--app-card-border": "rgba(255, 255, 255, 0.08)",
     "--app-header-bg": "rgba(30, 32, 40, 0.72)",

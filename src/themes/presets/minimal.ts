@@ -72,6 +72,8 @@ export const minimalPreset: ThemePreset = {
   },
   cssVars: {
     "--app-bg": "#fafafa",
+    "--app-bg-solid": "#fafafa",
+    "--app-bg-image": "none",
     "--app-card-bg": "#ffffff",
     "--app-card-border": "#e8e8e8",
     "--app-header-bg": "rgba(250, 250, 250, 0.9)",
@@ -86,6 +88,8 @@ export const minimalPreset: ThemePreset = {
   },
   cssDarkVars: {
     "--app-bg": "#111111",
+    "--app-bg-solid": "#111111",
+    "--app-bg-image": "none",
     "--app-card-bg": "#1c1c1e",
     "--app-card-border": "#2c2c2e",
     "--app-header-bg": "rgba(17, 17, 17, 0.92)",

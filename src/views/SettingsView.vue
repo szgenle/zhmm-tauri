@@ -61,7 +61,7 @@ const showRekey = ref(false);
 </script>
 
 <template>
-  <div>
+  <div class="settings-page">
     <n-card title="安全" style="margin-bottom: 16px">
       <n-form label-placement="left" label-width="160">
         <n-form-item label="空闲自动锁定 (分钟)">
@@ -135,6 +135,12 @@ const showRekey = ref(false);
 </template>
 
 <style scoped>
+.settings-page {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: none;
+}
+
 .style-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

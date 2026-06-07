@@ -10,6 +10,7 @@ import {
   RefreshOutline,
 } from "@vicons/ionicons5";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api, type RecentEntry } from "../api";
 import UnlockDialog from "../components/UnlockDialog.vue";
 import CreateVaultDialog from "../components/CreateVaultDialog.vue";
@@ -18,6 +19,22 @@ const router = useRouter();
 const message = useMessage();
 const dialog = useDialog();
 const themeVars = useThemeVars();
+
+// 手动触发窗口拖动（锁屏页无 header，需要顶部 drag-bar 提供入口）
+async function onDragMouseDown(e: MouseEvent) {
+  if (e.buttons !== 1) return;
+  e.preventDefault();
+  try {
+    const win = getCurrentWindow();
+    if (e.detail === 2) {
+      await win.toggleMaximize();
+    } else {
+      await win.startDragging();
+    }
+  } catch {
+    // 忽略：非 Tauri 环境或权限不足
+  }
+}
 
 const pageStyle = computed(() => ({
   color: themeVars.value.textColor1,
@@ -139,6 +156,7 @@ function fileName(path: string): string {
 
 <template>
   <div class="filelist-page" :style="pageStyle">
+    <div class="drag-bar" @mousedown="onDragMouseDown"></div>
     <div class="filelist-container">
       <div class="logo">
         <n-icon size="44" :depth="3"><ShieldCheckmarkOutline /></n-icon>
@@ -231,6 +249,16 @@ function fileName(path: string): string {
 </template>
 
 <style scoped>
+/* 顶部拖动条：覆盖红绿灯按钮右侧空白区域，允许从顶部拖动窗口 */
+.drag-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  z-index: 50;
+  -webkit-app-region: drag;
+}
 .filelist-page {
   min-height: 100vh;
   width: 100vw;

@@ -12,7 +12,8 @@ import {
   applyCssVars,
 } from "./themes";
 
-const sysIsDark = ref(false);
+const mql = window.matchMedia("(prefers-color-scheme: dark)");
+const sysIsDark = ref(mql.matches);
 const visualStyle = ref<VisualStyle>(getVisualStyle());
 
 const isDark = computed(() => {
@@ -47,16 +48,14 @@ function changeVisualStyle(style: VisualStyle) {
 provide("visualStyle", visualStyle);
 provide("changeVisualStyle", changeVisualStyle);
 
-const mql = window.matchMedia("(prefers-color-scheme: dark)");
 const handleChange = (e: MediaQueryListEvent) => {
   sysIsDark.value = e.matches;
 };
 
 onMounted(async () => {
-  sysIsDark.value = mql.matches;
   mql.addEventListener("change", handleChange);
+  // 异步加载后端持久化的 settings；加载完成后 isDark 会自动重新计算并触发 applyThemeCssVars
   await loadSettings();
-  applyThemeCssVars();
   // 启动后按设置应用防截屏
   try {
     await api.applyAntiCapture(settings.anti_screenshot ?? true);

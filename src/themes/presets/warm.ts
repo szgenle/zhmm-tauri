@@ -72,6 +72,8 @@ export const warmPreset: ThemePreset = {
   },
   cssVars: {
     "--app-bg": "linear-gradient(145deg, #fff7ed 0%, #fffbf5 50%, #fef3e2 100%)",
+    "--app-bg-solid": "#fff7ed",
+    "--app-bg-image": "linear-gradient(145deg, #fff7ed 0%, #fffbf5 50%, #fef3e2 100%)",
     "--app-card-bg": "#fffbf5",
     "--app-card-border": "rgba(249, 115, 22, 0.12)",
     "--app-header-bg": "rgba(255, 251, 245, 0.88)",
@@ -86,6 +88,8 @@ export const warmPreset: ThemePreset = {
   },
   cssDarkVars: {
     "--app-bg": "linear-gradient(145deg, #1a1410 0%, #1f1a14 50%, #1c1610 100%)",
+    "--app-bg-solid": "#1a1410",
+    "--app-bg-image": "linear-gradient(145deg, #1a1410 0%, #1f1a14 50%, #1c1610 100%)",
     "--app-card-bg": "#1f1a14",
     "--app-card-border": "rgba(251, 146, 60, 0.18)",
     "--app-header-bg": "rgba(26, 20, 16, 0.9)",

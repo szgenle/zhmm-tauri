@@ -766,7 +766,7 @@ const hasAllBuiltins = computed(() => {
 
 <style scoped>
 .tpl-mgmt {
-  height: calc(100vh - 92px);
+  height: 100%;
   overflow-y: auto;
   padding: 0 4px;
 }
