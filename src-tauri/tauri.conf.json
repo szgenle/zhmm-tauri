@@ -14,7 +14,9 @@
       {
         "title": "账号小本本 · Account Jotter",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

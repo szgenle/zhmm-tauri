@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { LockClosedOutline } from "@vicons/ionicons5";
 import { api } from "../api";
@@ -8,6 +8,9 @@ import { settings } from "../settings";
 const route = useRoute();
 const router = useRouter();
 const message = useMessage();
+
+// 平台检测：macOS 下需要给红绿灯按钮让位
+const isMacOS = ref(/Mac/i.test(navigator.platform || navigator.userAgent || ""));
 
 const tabValue = computed<string>({
   get: () => (route.name as string) ?? "passwords",
@@ -72,8 +75,8 @@ onUnmounted(() => {
 
 <template>
   <n-layout style="height: 100vh">
-    <n-layout-header class="header">
-      <div class="header-left">
+    <n-layout-header class="header" :class="{ 'header-macos': isMacOS }" data-tauri-drag-region>
+      <div class="header-left" data-tauri-drag-region>
         <span class="brand">账号小本本</span>
         <n-tabs :value="tabValue" type="line" @update:value="tabValue = $event" class="nav-tabs">
           <n-tab name="passwords">账号管理</n-tab>
@@ -117,6 +120,11 @@ onUnmounted(() => {
   top: 0;
   z-index: 100;
   transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* macOS 下使用 titleBarStyle: Overlay，需为红绿灯按钮让位 */
+.header.header-macos {
+  padding-left: 84px;
 }
 
 .header-left {
