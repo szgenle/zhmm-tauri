@@ -229,6 +229,22 @@ export const api = {
   suggestSite(urlOrHost: string): Promise<SiteSuggestion> {
     return invoke("suggest_site", { urlOrHost });
   },
+  /** 导出合并后的完整词典到指定路径，返回条目数 */
+  exportSiteCatalog(path: string): Promise<number> {
+    return invoke("export_site_catalog", { path });
+  },
+  /** 从 JSON 文件导入为用户词典（完全替换用户层），返回条目数 */
+  importSiteCatalog(path: string): Promise<number> {
+    return invoke("import_site_catalog", { path });
+  },
+  /** 重置用户词典，恢复为纯内置 */
+  resetSiteCatalog(): Promise<boolean> {
+    return invoke("reset_site_catalog");
+  },
+  /** 用户是否有自定义词典数据 */
+  hasUserCatalog(): Promise<boolean> {
+    return invoke("has_user_catalog");
+  },
   // 主密码管理
   verifyMasterPassword(password: string): Promise<boolean> {
     return invoke("verify_master_password", { password });

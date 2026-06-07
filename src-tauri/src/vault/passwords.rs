@@ -205,4 +205,46 @@ impl VaultState {
         self.persist_with_cached()?;
         Ok(updated)
     }
+
+    /// 收集密码库中所有条目的 URL host（去重、小写），用于导出词典时补充
+    pub fn collect_url_hosts(&self) -> AppResult<Vec<String>> {
+        let guard = self.data.read();
+        let data = guard.as_ref().ok_or(AppError::Locked)?;
+        let mut hosts: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for entry in &data.entries {
+            let url_str = entry.url.trim();
+            if url_str.is_empty() {
+                continue;
+            }
+            // 尝试提取 host
+            let host = extract_host_from_url(url_str);
+            if !host.is_empty() {
+                hosts.insert(host);
+            }
+        }
+        let mut result: Vec<String> = hosts.into_iter().collect();
+        result.sort();
+        Ok(result)
+    }
+}
+
+/// 从 URL 字符串提取纯 host（小写）
+fn extract_host_from_url(input: &str) -> String {
+    let s = input.trim().to_lowercase();
+    if s.is_empty() {
+        return String::new();
+    }
+    if let Ok(url) = url::Url::parse(&s) {
+        return url.host_str().unwrap_or("").to_string();
+    }
+    if let Ok(url) = url::Url::parse(&format!("https://{s}")) {
+        return url.host_str().unwrap_or("").to_string();
+    }
+    s.split('/')
+        .next()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_string()
 }

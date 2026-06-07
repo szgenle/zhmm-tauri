@@ -1,13 +1,22 @@
 //! 离线站点词典匹配器：根据 URL 建议中文名与标签。
 //!
-//! 数据内嵌在二进制中（`include_str!`），完全离线。
+//! 数据分两层：
+//! - 内置词典：编译进二进制（`include_str!`），只读，提供通用基础；
+//! - 用户词典：`app_data_dir/site_catalog_user.json`，可导入/导出/重置。
+//!
+//! 合并策略：用户词典同 host 条目覆盖内置词典。
 
-use serde::Serialize;
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::LazyLock;
 
+use crate::errors::{AppError, AppResult};
+
 /// 单个词典条目（返回给前端）
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiteCatalogEntry {
     pub host: String,
     pub name: String,
@@ -36,21 +45,26 @@ impl SiteSuggestion {
 /// 内嵌的 JSON 数据
 const CATALOG_JSON: &str = include_str!("../../resources/site_catalog.json");
 
-/// 缓存的词典
+/// 缓存的内置词典（只读）
 struct CatalogData {
     sites: HashMap<String, CatalogItem>,
 }
 
+#[derive(Clone)]
 struct CatalogItem {
     name: String,
     tags: Vec<String>,
 }
 
-static CATALOG: LazyLock<CatalogData> = LazyLock::new(load_catalog);
+static BUILTIN_CATALOG: LazyLock<CatalogData> = LazyLock::new(load_builtin_catalog);
 
-fn load_catalog() -> CatalogData {
+fn load_builtin_catalog() -> CatalogData {
+    parse_catalog_json(CATALOG_JSON)
+}
+
+fn parse_catalog_json(json: &str) -> CatalogData {
     let mut sites = HashMap::new();
-    if let Ok(raw) = serde_json::from_str::<serde_json::Value>(CATALOG_JSON) {
+    if let Ok(raw) = serde_json::from_str::<serde_json::Value>(json) {
         if let Some(sites_obj) = raw.get("sites").and_then(|s| s.as_object()) {
             for (host, info) in sites_obj {
                 let name = info
@@ -74,9 +88,286 @@ fn load_catalog() -> CatalogData {
     CatalogData { sites }
 }
 
-/// 返回词典全部条目（按 host 升序）
+// ========== 用户词典状态 ==========
+
+/// 用户词典持久化状态（Tauri managed state）
+pub struct UserCatalogState {
+    path: PathBuf,
+    /// 用户自定义条目（host -> CatalogItem）
+    data: RwLock<HashMap<String, CatalogItem>>,
+}
+
+impl UserCatalogState {
+    pub fn new(path: PathBuf) -> Self {
+        let data = Self::load_from_file(&path);
+        Self {
+            path,
+            data: RwLock::new(data),
+        }
+    }
+
+    fn load_from_file(path: &PathBuf) -> HashMap<String, CatalogItem> {
+        if !path.exists() {
+            return HashMap::new();
+        }
+        let Ok(bytes) = fs::read(path) else {
+            return HashMap::new();
+        };
+        let Ok(raw) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            return HashMap::new();
+        };
+        let catalog = parse_catalog_json(&raw.to_string());
+        catalog.sites
+    }
+
+    fn persist(&self) -> AppResult<()> {
+        if let Some(parent) = self.path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let data = self.data.read();
+        let json = Self::to_catalog_json(&data)?;
+        fs::write(&self.path, json)?;
+        Ok(())
+    }
+
+    fn to_catalog_json(data: &HashMap<String, CatalogItem>) -> AppResult<Vec<u8>> {
+        let mut sites = serde_json::Map::new();
+        let mut hosts: Vec<&String> = data.keys().collect();
+        hosts.sort();
+        for host in hosts {
+            if let Some(item) = data.get(host) {
+                let mut entry = serde_json::Map::new();
+                entry.insert("name".into(), serde_json::Value::String(item.name.clone()));
+                entry.insert(
+                    "tags".into(),
+                    serde_json::Value::Array(
+                        item.tags.iter().map(|t| serde_json::Value::String(t.clone())).collect(),
+                    ),
+                );
+                sites.insert(host.clone(), serde_json::Value::Object(entry));
+            }
+        }
+        let mut root = serde_json::Map::new();
+        let mut meta = serde_json::Map::new();
+        meta.insert("version".into(), serde_json::Value::Number(2.into()));
+        meta.insert(
+            "description".into(),
+            serde_json::Value::String("用户自定义网站词典".into()),
+        );
+        let now = chrono::Local::now().format("%Y-%m").to_string();
+        meta.insert("updated".into(), serde_json::Value::String(now));
+        root.insert("_meta".into(), serde_json::Value::Object(meta));
+        root.insert("sites".into(), serde_json::Value::Object(sites));
+        let bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(root))?;
+        Ok(bytes)
+    }
+
+    /// 是否有用户自定义数据
+    pub fn has_user_data(&self) -> bool {
+        !self.data.read().is_empty()
+    }
+}
+
+// ========== 合并后查询接口 ==========
+
+/// 返回合并后的全部条目（用户覆盖内置，按 host 升序）
+pub fn all_entries_merged(user_state: &UserCatalogState) -> Vec<SiteCatalogEntry> {
+    let builtin = &BUILTIN_CATALOG.sites;
+    let user_data = user_state.data.read();
+
+    let mut merged: HashMap<&str, (&CatalogItem, bool)> = HashMap::new();
+    // 先加内置
+    for (host, item) in builtin.iter() {
+        merged.insert(host.as_str(), (item, false));
+    }
+    // 用户覆盖
+    for (host, item) in user_data.iter() {
+        merged.insert(host.as_str(), (item, true));
+    }
+
+    let mut result: Vec<SiteCatalogEntry> = merged
+        .into_iter()
+        .map(|(host, (item, _))| SiteCatalogEntry {
+            host: host.to_string(),
+            name: item.name.clone(),
+            tags: item.tags.clone(),
+        })
+        .collect();
+    result.sort_by(|a, b| a.host.cmp(&b.host));
+    result
+}
+
+/// 根据 URL 或 host 给出中文名 + 建议标签（合并用户词典）
+pub fn suggest_merged(url_or_host: &str, user_state: &UserCatalogState) -> SiteSuggestion {
+    let host = extract_host(url_or_host);
+    if host.is_empty() {
+        return SiteSuggestion::empty();
+    }
+
+    let user_data = user_state.data.read();
+
+    // 优先查用户词典
+    if let Some(item) = user_data.get(&host) {
+        return SiteSuggestion {
+            name: item.name.clone(),
+            tags: item.tags.clone(),
+            matched: "host".into(),
+        };
+    }
+    let domain = registrable_domain(&host);
+    if !domain.is_empty() && domain != host {
+        if let Some(item) = user_data.get(&domain) {
+            return SiteSuggestion {
+                name: item.name.clone(),
+                tags: item.tags.clone(),
+                matched: "domain".into(),
+            };
+        }
+    }
+
+    // 再查内置词典
+    let builtin = &BUILTIN_CATALOG.sites;
+
+    if let Some(item) = builtin.get(&host) {
+        return SiteSuggestion {
+            name: item.name.clone(),
+            tags: item.tags.clone(),
+            matched: "host".into(),
+        };
+    }
+
+    if !domain.is_empty() && domain != host {
+        if let Some(item) = builtin.get(&domain) {
+            return SiteSuggestion {
+                name: item.name.clone(),
+                tags: item.tags.clone(),
+                matched: "domain".into(),
+            };
+        }
+    }
+
+    // 兜底规则
+    let rule_tags = apply_rules(&host);
+    if !rule_tags.is_empty() {
+        return SiteSuggestion {
+            name: String::new(),
+            tags: rule_tags,
+            matched: "rule".into(),
+        };
+    }
+
+    SiteSuggestion::empty()
+}
+
+// ========== 导入/导出/重置 ==========
+
+/// 导出合并后的完整词典到指定路径，同时补充密码库中尚未收录的站点（空名+空标签）
+pub fn export_catalog(
+    user_state: &UserCatalogState,
+    dest: &str,
+    vault_hosts: &[String],
+) -> AppResult<usize> {
+    let entries = all_entries_merged(user_state);
+    // 已有的 host 集合
+    let existing: std::collections::HashSet<&str> =
+        entries.iter().map(|e| e.host.as_str()).collect();
+
+    // 从密码库补充尚未收录的 host
+    let mut extra_entries: Vec<SiteCatalogEntry> = Vec::new();
+    for host in vault_hosts {
+        let h = host.trim().to_lowercase();
+        if !h.is_empty() && !existing.contains(h.as_str()) {
+            extra_entries.push(SiteCatalogEntry {
+                host: h,
+                name: String::new(),
+                tags: Vec::new(),
+            });
+        }
+    }
+
+    let mut all = entries;
+    all.extend(extra_entries);
+    all.sort_by(|a, b| a.host.cmp(&b.host));
+    let count = all.len();
+
+    let mut sites = serde_json::Map::new();
+    for entry in &all {
+        let mut obj = serde_json::Map::new();
+        obj.insert("name".into(), serde_json::Value::String(entry.name.clone()));
+        obj.insert(
+            "tags".into(),
+            serde_json::Value::Array(
+                entry.tags.iter().map(|t| serde_json::Value::String(t.clone())).collect(),
+            ),
+        );
+        sites.insert(entry.host.clone(), serde_json::Value::Object(obj));
+    }
+
+    let mut root = serde_json::Map::new();
+    let mut meta = serde_json::Map::new();
+    meta.insert("version".into(), serde_json::Value::Number(2.into()));
+    meta.insert(
+        "description".into(),
+        serde_json::Value::String("网站词典导出（可外部编辑后重新导入）".into()),
+    );
+    let now = chrono::Local::now().format("%Y-%m-%d").to_string();
+    meta.insert("updated".into(), serde_json::Value::String(now));
+    root.insert("_meta".into(), serde_json::Value::Object(meta));
+    root.insert("sites".into(), serde_json::Value::Object(sites));
+
+    let json = serde_json::to_vec_pretty(&serde_json::Value::Object(root))?;
+    fs::write(dest, json)?;
+    Ok(count)
+}
+
+/// 从 JSON 文件导入为用户词典（完全替换用户层）
+pub fn import_catalog(user_state: &UserCatalogState, src: &str) -> AppResult<usize> {
+    let bytes = fs::read(src).map_err(|e| AppError::Other(format!("读取文件失败: {e}")))?;
+    let raw: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|e| AppError::Other(format!("JSON 解析失败: {e}")))?;
+
+    let sites_obj = raw
+        .get("sites")
+        .and_then(|s| s.as_object())
+        .ok_or_else(|| AppError::Other("JSON 格式错误：缺少 sites 字段".into()))?;
+
+    let mut new_data: HashMap<String, CatalogItem> = HashMap::new();
+    for (host, info) in sites_obj {
+        let name = info
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string();
+        let tags: Vec<String> = info
+            .get("tags")
+            .and_then(|t| t.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+        new_data.insert(host.trim().to_lowercase(), CatalogItem { name, tags });
+    }
+
+    let count = new_data.len();
+    *user_state.data.write() = new_data;
+    user_state.persist()?;
+    Ok(count)
+}
+
+/// 重置用户词典（清空用户层，恢复为纯内置）
+pub fn reset_user_catalog(user_state: &UserCatalogState) -> AppResult<()> {
+    user_state.data.write().clear();
+    // 删除用户词典文件
+    if user_state.path.exists() {
+        fs::remove_file(&user_state.path)?;
+    }
+    Ok(())
+}
+
+// ========== 兼容旧接口（不依赖 state 的只读内置查询） ==========
+
+/// 返回内置词典全部条目（按 host 升序）—— 仅在无 state 时使用
+#[allow(dead_code)]
 pub fn all_entries() -> Vec<SiteCatalogEntry> {
-    let catalog = &*CATALOG;
+    let catalog = &*BUILTIN_CATALOG;
     let mut result: Vec<SiteCatalogEntry> = catalog
         .sites
         .iter()
@@ -90,14 +381,15 @@ pub fn all_entries() -> Vec<SiteCatalogEntry> {
     result
 }
 
-/// 根据 URL 或 host 给出中文名 + 建议标签
+/// 根据 URL 或 host 给出中文名 + 建议标签（仅内置词典）
+#[allow(dead_code)]
 pub fn suggest(url_or_host: &str) -> SiteSuggestion {
     let host = extract_host(url_or_host);
     if host.is_empty() {
         return SiteSuggestion::empty();
     }
 
-    let catalog = &*CATALOG;
+    let catalog = &*BUILTIN_CATALOG;
 
     // 1. 完整 host 精确匹配
     if let Some(item) = catalog.sites.get(&host) {

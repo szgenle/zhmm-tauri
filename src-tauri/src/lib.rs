@@ -13,6 +13,7 @@ pub mod vault;
 
 use accounts::RecentStore;
 use settings::SettingsState;
+use site_catalog::UserCatalogState;
 use tauri::Manager;
 use vault::VaultState;
 
@@ -27,9 +28,11 @@ pub fn run() {
             let data_dir = app.path().app_data_dir().expect("无法获取应用数据目录");
             let settings_path = data_dir.join("settings.json");
             let recent_path = data_dir.join("recent_files.json");
+            let user_catalog_path = data_dir.join("site_catalog_user.json");
             app.manage(VaultState::new());
             app.manage(SettingsState::new(settings_path));
             app.manage(RecentStore::new(recent_path));
+            app.manage(UserCatalogState::new(user_catalog_path));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -69,6 +72,10 @@ pub fn run() {
             commands::rollback_password,
             commands::list_site_catalog,
             commands::suggest_site,
+            commands::export_site_catalog,
+            commands::import_site_catalog,
+            commands::reset_site_catalog,
+            commands::has_user_catalog,
             commands::verify_master_password,
             commands::rekey_vault,
             commands::apply_anti_capture,

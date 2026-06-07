@@ -10,13 +10,57 @@ use crate::vault::VaultState;
 // ========== 站点词典 ==========
 
 #[tauri::command]
-pub fn list_site_catalog() -> Vec<site_catalog::SiteCatalogEntry> {
-    site_catalog::all_entries()
+pub fn list_site_catalog(
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+) -> Vec<site_catalog::SiteCatalogEntry> {
+    site_catalog::all_entries_merged(&user_catalog)
 }
 
 #[tauri::command]
-pub fn suggest_site(url_or_host: String) -> site_catalog::SiteSuggestion {
-    site_catalog::suggest(&url_or_host)
+pub fn suggest_site(
+    url_or_host: String,
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+) -> site_catalog::SiteSuggestion {
+    site_catalog::suggest_merged(&url_or_host, &user_catalog)
+}
+
+/// 导出合并后的完整词典到指定路径，返回条目数
+/// 同时会自动补充密码库中已录入但词典未收录的站点（空名/空标签，供外部分类）
+#[tauri::command]
+pub fn export_site_catalog(
+    path: String,
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+    vault: State<'_, VaultState>,
+) -> AppResult<usize> {
+    // 尝试从密码库收集 hosts（未解锁时跳过，不影响导出）
+    let vault_hosts = vault.collect_url_hosts().unwrap_or_default();
+    site_catalog::export_catalog(&user_catalog, &path, &vault_hosts)
+}
+
+/// 从 JSON 文件导入为用户词典（完全替换用户层），返回导入条目数
+#[tauri::command]
+pub fn import_site_catalog(
+    path: String,
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+) -> AppResult<usize> {
+    site_catalog::import_catalog(&user_catalog, &path)
+}
+
+/// 重置用户词典，恢复为纯内置
+#[tauri::command]
+pub fn reset_site_catalog(
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+) -> AppResult<bool> {
+    site_catalog::reset_user_catalog(&user_catalog)?;
+    Ok(true)
+}
+
+/// 用户是否有自定义词典数据
+#[tauri::command]
+pub fn has_user_catalog(
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+) -> bool {
+    user_catalog.has_user_data()
 }
 
 // ========== 主密码管理 ==========

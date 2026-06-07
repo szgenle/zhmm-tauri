@@ -11,6 +11,7 @@ const message = useMessage();
 const allEntries = ref<SiteCatalogEntry[]>([]);
 const searchQuery = ref("");
 const loading = ref(false);
+const hasUserData = ref(false);
 
 // 防抖搜索
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -45,6 +46,7 @@ async function loadCatalog() {
   loading.value = true;
   try {
     allEntries.value = await api.listSiteCatalog();
+    hasUserData.value = await api.hasUserCatalog();
   } catch (e: any) {
     message.error(`加载站点词典失败: ${e}`);
   } finally {
@@ -72,7 +74,7 @@ watch(
     @update:show="(v) => emit('update:show', v)"
   >
     <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 12px">
-      内置离线站点词典，可根据网址自动建议名称和标签。仅用于辅助填写，不联网。
+      离线站点词典，根据网址自动建议名称和标签。可在「数据管理」页导入导出。
     </n-text>
 
     <n-space justify="space-between" align="center" style="margin-bottom: 12px">
@@ -82,7 +84,10 @@ watch(
         clearable
         style="width: 320px"
       />
-      <n-text depth="3" style="font-size: 12px">{{ countSummary }}</n-text>
+      <n-space :size="8" align="center">
+        <n-text depth="3" style="font-size: 12px">{{ countSummary }}</n-text>
+        <n-tag v-if="hasUserData" type="info" size="small">已自定义</n-tag>
+      </n-space>
     </n-space>
 
     <n-spin :show="loading">
