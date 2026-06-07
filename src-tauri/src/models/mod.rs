@@ -18,10 +18,12 @@
 //! 通过 `pub use` 重导出全部公共项，外部 `crate::models::Xxx` 路径保持不变。
 
 mod password;
+mod tag_registry;
 mod template;
 mod vault;
 
 pub use password::*;
+pub use tag_registry::*;
 pub use template::*;
 pub use vault::*;
 

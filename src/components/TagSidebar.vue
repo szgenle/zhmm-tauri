@@ -15,49 +15,98 @@ const emit = defineEmits<{
   (e: "update:selectedTags", value: string[]): void;
 }>();
 
-interface TagInfo {
+/** 子标签最低出现次数阈值 */
+const CHILD_MIN_COUNT = 5;
+
+interface TagNode {
   tag: string;
   label: string;
   count: number;
   checked: boolean;
-  uncategorized?: boolean;
+  children: TagChild[];
+  expanded: boolean;
 }
 
-const tagList = computed<TagInfo[]>(() => {
-  // 仅以每条记录的第一个标签（一级标签）为分组键聚合
-  const counter = new Map<string, number>();
+interface TagChild {
+  tag: string;
+  label: string;
+  count: number;
+  checked: boolean;
+}
+
+// 展开状态缓存
+const expandedMap = ref<Record<string, boolean>>({});
+
+function toggleExpand(tag: string) {
+  expandedMap.value[tag] = !(expandedMap.value[tag] ?? true);
+}
+
+const tagTree = computed<{ nodes: TagNode[]; uncategorizedCount: number }>(() => {
+  // 统计一级标签(tags[0])计数
+  const primaryCounter = new Map<string, number>();
+  // 统计每个一级标签下的子标签(tags[1:])计数
+  const childrenCounter = new Map<string, Map<string, number>>();
   let uncategorizedCount = 0;
+
   for (const entry of props.entries) {
-    const primary = (entry.tags || []).find((t) => !!t);
-    if (!primary) {
+    const tags = (entry.tags || []).filter((t) => !!t);
+    if (tags.length === 0) {
       uncategorizedCount += 1;
       continue;
     }
-    counter.set(primary, (counter.get(primary) || 0) + 1);
+    const primary = tags[0];
+    primaryCounter.set(primary, (primaryCounter.get(primary) || 0) + 1);
+
+    // 收集子标签
+    for (let i = 1; i < tags.length; i++) {
+      const child = tags[i];
+      if (!child) continue;
+      if (!childrenCounter.has(primary)) {
+        childrenCounter.set(primary, new Map());
+      }
+      const cm = childrenCounter.get(primary)!;
+      cm.set(child, (cm.get(child) || 0) + 1);
+    }
   }
-  // 按频次倒序 + 字母序稳定
-  const sorted = [...counter.entries()].sort((a, b) => {
+
+  // 按频次倒序 + 字母序
+  const sorted = [...primaryCounter.entries()].sort((a, b) => {
     if (b[1] !== a[1]) return b[1] - a[1];
     return a[0].localeCompare(b[0]);
   });
+
   const selected = new Set(props.selectedTags);
-  const list: TagInfo[] = sorted.map(([tag, count]) => ({
-    tag,
-    label: tag,
-    count,
-    checked: selected.has(tag),
-  }));
-  if (uncategorizedCount > 0) {
-    list.push({
-      tag: UNCATEGORIZED_TAG,
-      label: "未分类",
-      count: uncategorizedCount,
-      checked: selected.has(UNCATEGORIZED_TAG),
-      uncategorized: true,
-    });
-  }
-  return list;
+
+  const nodes: TagNode[] = sorted.map(([tag, count]) => {
+    const cm = childrenCounter.get(tag);
+    let children: TagChild[] = [];
+    if (cm) {
+      children = [...cm.entries()]
+        .filter(([, c]) => c >= CHILD_MIN_COUNT)
+        .sort((a, b) => b[1] - a[1])
+        .map(([childTag, childCount]) => ({
+          tag: childTag,
+          label: childTag,
+          count: childCount,
+          checked: selected.has(childTag),
+        }));
+    }
+    return {
+      tag,
+      label: tag,
+      count,
+      checked: selected.has(tag),
+      children,
+      expanded: expandedMap.value[tag] ?? true,
+    };
+  });
+
+  return { nodes, uncategorizedCount };
 });
+
+const uncategorizedChecked = computed(() =>
+  props.selectedTags.includes(UNCATEGORIZED_TAG),
+);
 
 function toggle(tag: string) {
   const set = new Set(props.selectedTags);
@@ -88,28 +137,62 @@ const collapsed = ref(false);
       </n-button>
     </div>
     <div v-if="!collapsed" class="sidebar-body">
-      <div v-if="!tagList.length" class="empty-hint">
+      <div v-if="!tagTree.nodes.length && tagTree.uncategorizedCount === 0" class="empty-hint">
         暂无标签。<br />编辑条目时添加标签即可在此筛选。
       </div>
-      <div v-else class="tag-chips-wrap">
-        <span
-          class="tag-chip"
+      <div v-else class="tag-tree">
+        <!-- 全部 -->
+        <div
+          class="tree-item all-item"
           :class="{ active: props.selectedTags.length === 0 }"
           @click="clearSelection"
         >
-          全部
-          <span class="chip-count">{{ props.entries.length }}</span>
-        </span>
-        <span
-          v-for="item in tagList"
-          :key="item.tag"
-          class="tag-chip"
-          :class="{ active: item.checked, uncategorized: item.uncategorized }"
-          @click="toggle(item.tag)"
+          <span class="item-label">全部</span>
+          <span class="item-count">{{ props.entries.length }}</span>
+        </div>
+
+        <!-- 一级标签 -->
+        <template v-for="node in tagTree.nodes" :key="node.tag">
+          <div
+            class="tree-item primary-item"
+            :class="{ active: node.checked }"
+            @click="toggle(node.tag)"
+          >
+            <span
+              v-if="node.children.length > 0"
+              class="expand-btn"
+              @click.stop="toggleExpand(node.tag)"
+            >{{ (expandedMap[node.tag] ?? true) ? '▼' : '▶' }}</span>
+            <span v-else class="primary-marker">◆</span>
+            <span class="item-label">{{ node.label }}</span>
+            <span class="item-count">{{ node.count }}</span>
+          </div>
+          <!-- 子标签 -->
+          <template v-if="(expandedMap[node.tag] ?? true) && node.children.length > 0">
+            <div
+              v-for="child in node.children"
+              :key="child.tag"
+              class="tree-item child-item"
+              :class="{ active: child.checked }"
+              @click="toggle(child.tag)"
+            >
+              <span class="item-label">{{ child.label }}</span>
+              <span class="item-count">{{ child.count }}</span>
+            </div>
+          </template>
+        </template>
+
+        <!-- 未分类 -->
+        <div
+          v-if="tagTree.uncategorizedCount > 0"
+          class="tree-item uncategorized-item"
+          :class="{ active: uncategorizedChecked }"
+          @click="toggle(UNCATEGORIZED_TAG)"
         >
-          {{ item.label }}
-          <span class="chip-count">{{ item.count }}</span>
-        </span>
+          <span class="primary-marker">◇</span>
+          <span class="item-label">未分类</span>
+          <span class="item-count">{{ tagTree.uncategorizedCount }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -145,7 +228,7 @@ const collapsed = ref(false);
 .sidebar-body {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 10px;
+  padding: 4px 8px;
 }
 .empty-hint {
   color: var(--n-text-color-3, #999);
@@ -153,56 +236,104 @@ const collapsed = ref(false);
   padding: 8px 0;
   opacity: 0.8;
 }
-.tag-chips-wrap {
+
+/* ====== 树形列表 ====== */
+.tag-tree {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 1px;
 }
-.tag-chip {
-  display: inline-flex;
+
+.tree-item {
+  display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 12px;
-  border-radius: 16px;
-  font-size: 13px;
+  padding: 5px 8px;
+  border-radius: 6px;
   cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s ease;
   user-select: none;
+}
+.tree-item:hover {
   background: var(--n-color-hover, rgba(0, 0, 0, 0.04));
-  border: 1px solid transparent;
-  transition: all 0.2s ease;
 }
-.tag-chip:hover {
-  background: var(--n-color-pressed, rgba(0, 0, 0, 0.08));
-  transform: translateY(-1px);
-}
-.tag-chip.active {
+.tree-item.active {
   background: var(--n-color-primary, #18a058);
-  color: #fff;
-  border-color: var(--n-color-primary, #18a058);
-  box-shadow: 0 2px 8px rgba(24, 160, 88, 0.25);
-}
-.chip-count {
-  font-size: 11px;
-  opacity: 0.7;
-  margin-left: 2px;
-}
-.tag-chip.active .chip-count {
-  opacity: 0.85;
-}
-.tag-chip.uncategorized {
-  font-style: italic;
-  color: var(--n-text-color-3, #888);
-}
-.tag-chip.uncategorized.active {
-  font-style: normal;
   color: #fff;
 }
 
-/* 深色主题适配 */
-:global(html[data-theme="dark"]) .tag-chip {
-  background: rgba(255, 255, 255, 0.05);
+.tree-item.child-item {
+  padding-left: 26px;
+  font-size: 12px;
+  opacity: 0.85;
 }
-:global(html[data-theme="dark"]) .tag-chip:hover {
-  background: rgba(255, 255, 255, 0.10);
+.tree-item.child-item.active {
+  opacity: 1;
+}
+
+.tree-item.uncategorized-item {
+  font-style: italic;
+  opacity: 0.7;
+}
+.tree-item.uncategorized-item.active {
+  font-style: normal;
+  opacity: 1;
+}
+
+.all-item {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.expand-btn {
+  flex: none;
+  width: 14px;
+  font-size: 9px;
+  text-align: center;
+  color: var(--n-text-color-3, #888);
+  cursor: pointer;
+  user-select: none;
+}
+.expand-btn.placeholder {
+  cursor: default;
+  opacity: 0.4;
+}
+.primary-marker {
+  flex: none;
+  width: 14px;
+  font-size: 8px;
+  text-align: center;
+  color: var(--n-color-primary, #18a058);
+  user-select: none;
+  opacity: 0.7;
+}
+.tree-item.active .expand-btn {
+  color: rgba(255, 255, 255, 0.7);
+}
+.tree-item.active .primary-marker {
+  color: rgba(255, 255, 255, 0.85);
+  opacity: 1;
+}
+
+.item-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-count {
+  flex: none;
+  font-size: 11px;
+  opacity: 0.6;
+}
+.tree-item.active .item-count {
+  opacity: 0.85;
+}
+
+/* 深色主题适配 */
+:global(html[data-theme="dark"]) .tree-item:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 </style>

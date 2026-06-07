@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{default_templates, now_ts, AccountTemplate, PasswordEntry, DEFAULT_ROLES};
+use super::{default_templates, now_ts, AccountTemplate, PasswordEntry, TagDefinition, DEFAULT_ROLES};
 
 /// 账号库明文模型（v7 schema）；顶层 `{ data, roles, utime, templates? }`
 ///
@@ -19,6 +19,9 @@ pub struct VaultData {
     /// vault 级账号模板注册表（v2.0+），旧库无此字段，反序列化得到空 Vec
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub templates: Vec<AccountTemplate>,
+    /// 标签注册表：定义合法标签池、层级关系与元数据（颜色/图标/排序）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tag_registry: Vec<TagDefinition>,
 }
 
 fn default_roles() -> Vec<String> {
@@ -38,6 +41,7 @@ impl VaultData {
             roles: default_roles(),
             utime: now_ts(),
             templates: Vec::new(),
+            tag_registry: Vec::new(),
         }
     }
 

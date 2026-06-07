@@ -20,6 +20,7 @@ use crate::models::{default_templates, VaultData};
 mod backup;
 mod passwords;
 mod rekey;
+mod tag_registry;
 mod tags;
 mod templates;
 

@@ -44,6 +44,7 @@ const tabValue = computed<string>({
       "template-management": "/template-management",
       "data-management": "/data-management",
       "site-nav": "/site-nav",
+      "tag-dictionary": "/tag-dictionary",
       settings: "/settings",
     };
     router.push(map[val] ?? "/");
@@ -118,6 +119,7 @@ onUnmounted(() => {
         <n-tab name="passwords">账号管理</n-tab>
         <n-tab name="role-management">分类管理</n-tab>
         <n-tab name="site-nav">网站导航</n-tab>
+        <n-tab name="tag-dictionary">标签词典</n-tab>
         <n-tab name="template-management">模板管理</n-tab>
         <n-tab name="data-management">数据管理</n-tab>
         <n-tab name="settings">系统设置</n-tab>
@@ -214,7 +216,8 @@ onUnmounted(() => {
   border-bottom: 2px solid var(--n-tab-text-color-active, currentColor) !important;
 }
 
-/* 后三个标签字号小一号、整体淡化、字重更轻，弱化视觉权重 */
+/* 后四个标签字号小一号、整体淡化、字重更轻，弱化视觉权重 */
+.nav-tabs :deep(.n-tabs-tab[data-name="tag-dictionary"]),
 .nav-tabs :deep(.n-tabs-tab[data-name="template-management"]),
 .nav-tabs :deep(.n-tabs-tab[data-name="data-management"]),
 .nav-tabs :deep(.n-tabs-tab[data-name="settings"]) {
@@ -223,11 +226,13 @@ onUnmounted(() => {
   opacity: 0.55;
   transition: opacity 0.2s ease;
 }
+.nav-tabs :deep(.n-tabs-tab[data-name="tag-dictionary"]:hover),
 .nav-tabs :deep(.n-tabs-tab[data-name="template-management"]:hover),
 .nav-tabs :deep(.n-tabs-tab[data-name="data-management"]:hover),
 .nav-tabs :deep(.n-tabs-tab[data-name="settings"]:hover) {
   opacity: 0.85;
 }
+.nav-tabs :deep(.n-tabs-tab[data-name="tag-dictionary"].n-tabs-tab--active),
 .nav-tabs :deep(.n-tabs-tab[data-name="template-management"].n-tabs-tab--active),
 .nav-tabs :deep(.n-tabs-tab[data-name="data-management"].n-tabs-tab--active),
 .nav-tabs :deep(.n-tabs-tab[data-name="settings"].n-tabs-tab--active) {

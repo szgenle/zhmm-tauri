@@ -218,6 +218,28 @@ export const api = {
   deleteTag(tag: string): Promise<number> {
     return invoke("delete_tag", { tag });
   },
+  // 标签注册表
+  listTagRegistry(): Promise<TagDefinition[]> {
+    return invoke("list_tag_registry");
+  },
+  saveTagRegistry(items: TagDefinition[]): Promise<void> {
+    return invoke("save_tag_registry", { items });
+  },
+  upsertTagDef(def: TagDefinition): Promise<void> {
+    return invoke("upsert_tag_def", { def });
+  },
+  removeTagDef(name: string): Promise<void> {
+    return invoke("remove_tag_def", { name });
+  },
+  mergeTags(sources: string[], target: string): Promise<number> {
+    return invoke("merge_tags", { sources, target });
+  },
+  getTagStats(): Promise<TagStats[]> {
+    return invoke("get_tag_stats");
+  },
+  getTagHierarchy(): Promise<TagHierarchyNode[]> {
+    return invoke("get_tag_hierarchy");
+  },
   // 密码历史回滚
   rollbackPassword(id: number, historyIndex: number): Promise<PasswordEntry> {
     return invoke("rollback_password", { id, historyIndex });
@@ -328,6 +350,32 @@ export interface BackupInfo {
 export interface TagCount {
   tag: string;
   count: number;
+}
+
+export interface TagDefinition {
+  name: string;
+  color: string;
+  icon: string;
+  order: number;
+  /** 来源: "manual"=手动创建, "import"=导入词典, ""=未知/旧数据 */
+  source: string;
+}
+
+export interface TagStats {
+  name: string;
+  /** 总使用次数 */
+  count: number;
+  /** 作为 tags[0]（一级标签）的次数 */
+  primary_count: number;
+  /** 是否存在于站点词典中 */
+  in_catalog: boolean;
+}
+
+export interface TagHierarchyNode {
+  /** 一级标签名（tags[0]） */
+  name: string;
+  /** 该一级标签下的子标签列表 */
+  children: string[];
 }
 
 export interface SiteCatalogEntry {

@@ -48,6 +48,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "网站导航" },
       },
       {
+        path: "tag-dictionary",
+        name: "tag-dictionary",
+        component: () => import("../views/TagDictionaryView.vue"),
+        meta: { title: "标签词典" },
+      },
+      {
         path: "settings",
         name: "settings",
         component: () => import("../views/SettingsView.vue"),
