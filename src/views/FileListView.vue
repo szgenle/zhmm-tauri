@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { useDialog, useMessage } from "naive-ui";
+import { useDialog, useMessage, useThemeVars } from "naive-ui";
 import {
   ShieldCheckmarkOutline,
   AddCircleOutline,
@@ -17,6 +17,20 @@ import CreateVaultDialog from "../components/CreateVaultDialog.vue";
 const router = useRouter();
 const message = useMessage();
 const dialog = useDialog();
+const themeVars = useThemeVars();
+
+const pageStyle = computed(() => ({
+  color: themeVars.value.textColor1,
+}));
+const subtitleStyle = computed(() => ({
+  color: themeVars.value.textColor3,
+}));
+const itemPathStyle = computed(() => ({
+  color: themeVars.value.textColor3,
+}));
+const itemMetaStyle = computed(() => ({
+  color: themeVars.value.textColor2,
+}));
 
 const recents = ref<RecentEntry[]>([]);
 const loading = ref(false);
@@ -124,12 +138,12 @@ function fileName(path: string): string {
 </script>
 
 <template>
-  <n-layout class="filelist-page">
+  <div class="filelist-page" :style="pageStyle">
     <div class="filelist-container">
       <div class="logo">
         <n-icon size="44" :depth="3"><ShieldCheckmarkOutline /></n-icon>
         <h1>账号小本本</h1>
-        <p class="subtitle">选择一个账号库以解锁，或新建 / 打开 .ajot（也兼容老后缀 .zmb）</p>
+        <p class="subtitle" :style="subtitleStyle">选择一个账号库以解锁，或新建 / 打开 .ajot（也兼容老后缀 .zmb）</p>
       </div>
 
       <n-alert
@@ -187,8 +201,8 @@ function fileName(path: string): string {
           >
             <div class="item-main">
               <div class="item-name">{{ fileName(item.path) }}</div>
-              <div class="item-path" :title="item.path">{{ item.path }}</div>
-              <div class="item-meta">
+              <div class="item-path" :title="item.path" :style="itemPathStyle">{{ item.path }}</div>
+              <div class="item-meta" :style="itemMetaStyle">
                 <span class="meta-account">账号：{{ item.account || "-" }}</span>
                 <span class="meta-time">{{ item.last_access_time }}</span>
               </div>
@@ -213,7 +227,7 @@ function fileName(path: string): string {
       @success="handleUnlocked"
     />
     <CreateVaultDialog v-model:show="showCreate" @success="handleCreated" />
-  </n-layout>
+  </div>
 </template>
 
 <style scoped>
@@ -221,9 +235,10 @@ function fileName(path: string): string {
   min-height: 100vh;
   width: 100vw;
   display: flex;
-  align-items: flex-start;
+  /* safe center: 内容比视口矮时居中；比视口高时回退为 start，避免被裁切 */
+  align-items: safe center;
   justify-content: center;
-  padding: 60px 24px;
+  padding: 40px 24px;
   box-sizing: border-box;
   background: var(--app-bg);
 }
