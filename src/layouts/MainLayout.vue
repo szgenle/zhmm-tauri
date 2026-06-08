@@ -117,8 +117,8 @@ onUnmounted(() => {
     <div class="tab-bar">
       <n-tabs :value="tabValue" type="line" @update:value="tabValue = $event" class="nav-tabs">
         <n-tab name="passwords">账号管理</n-tab>
-        <n-tab name="role-management">分类管理</n-tab>
         <n-tab name="site-nav">网站导航</n-tab>
+        <n-tab name="role-management">分组浏览</n-tab>
         <n-tab name="tag-dictionary">标签词典</n-tab>
         <n-tab name="template-management">模板管理</n-tab>
         <n-tab name="data-management">数据管理</n-tab>

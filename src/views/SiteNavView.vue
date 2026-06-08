@@ -5,35 +5,46 @@ import { useMessage } from "naive-ui";
 import { api, type PasswordEntry, type PasswordSummary, type SiteSuggestion } from "../api";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import PasswordEditDialog from "../components/PasswordEditDialog.vue";
+import TagSidebar, { UNCATEGORIZED_TAG } from "../components/TagSidebar.vue";
+import {
+  useCustomTagRules,
+  isCustomTagSentinel,
+  ruleIdOfSentinel,
+  matchCustomRule,
+} from "../composables/useCustomTagRules";
 
 const message = useMessage();
 
 const loading = ref(false);
 const allData = ref<PasswordSummary[]>([]);
 const searchQuery = ref("");
-const selectedTag = ref("");
+/** 单选标签数组（最多一项），与 TagSidebar 统一接口 */
+const selectedTags = ref<string[]>([]);
 
-// 最近查看标签（与分类管理共享 localStorage）
+const { findRule } = useCustomTagRules();
+
+// 最近使用标签（与账号管理共享同一组件，独立 key）
 const RECENT_TAGS_KEY = "ajot_role_mgmt_recent_tags";
-const MAX_RECENT_TAGS = 50;
 
+/** 当前选中的单标签（"" 表示未选） */
+const selectedTag = computed(() => selectedTags.value[0] || "");
+
+/** TagSidebar 内部会更新 localStorage，本地缓存用于 groupedEntries 排序与 sidebar 顺序保持一致 */
 function loadRecentTags(): string[] {
   try {
     const stored = localStorage.getItem(RECENT_TAGS_KEY);
-    if (stored) return JSON.parse(stored);
+    if (stored) {
+      const arr = JSON.parse(stored);
+      if (Array.isArray(arr)) return arr.filter((x) => typeof x === "string");
+    }
   } catch { /* ignore */ }
   return [];
 }
-
 const recentTags = ref<string[]>(loadRecentTags());
-
-function touchTag(tag: string) {
-  const list = recentTags.value.filter((t) => t !== tag);
-  list.unshift(tag);
-  if (list.length > MAX_RECENT_TAGS) list.length = MAX_RECENT_TAGS;
-  recentTags.value = list;
-  localStorage.setItem(RECENT_TAGS_KEY, JSON.stringify(list));
-}
+watch(selectedTags, () => {
+  // TagSidebar 已写入 localStorage，这里同步刷新本地缓存
+  recentTags.value = loadRecentTags();
+});
 
 // 站点建议缓存: domain -> SiteSuggestion
 const suggestCache = ref<Record<string, SiteSuggestion>>({});
@@ -83,73 +94,17 @@ const entriesWithUrl = computed(() =>
   allData.value.filter((e) => e.url && e.url.trim().length > 0)
 );
 
-/** 所有标签选项（仅取每条记录的第一个标签作为一级分组键） */
-const tagOptions = computed(() => {
-  const tags = new Set<string>();
-  for (const entry of entriesWithUrl.value) {
-    const primary = (entry.tags || []).find((t) => !!t);
-    if (primary) tags.add(primary);
-  }
-  return Array.from(tags).sort();
-});
-
-/** 标签芯片栏：包含名称、计数，按最近使用排序，未分类放最后 */
-const UNTAGGED_KEY = "__untagged__";
-const tagChips = computed(() => {
-  const counts = new Map<string, number>();
-  let untagged = 0;
-  for (const entry of entriesWithUrl.value) {
-    const primary = (entry.tags || []).find((t) => !!t);
-    if (!primary) {
-      untagged++;
-      continue;
-    }
-    counts.set(primary, (counts.get(primary) || 0) + 1);
-  }
-  // 按最近使用排序，未出现在 recentTags 中的按频次倒序 + 字母序
-  const recentOrder = recentTags.value;
-  const allTags = tagOptions.value;
-  const added = new Set<string>();
-  const arr: { key: string; label: string; count: number }[] = [];
-  // 先按最近顺序
-  for (const tag of recentOrder) {
-    if (allTags.includes(tag) && !added.has(tag)) {
-      arr.push({ key: tag, label: tag, count: counts.get(tag) || 0 });
-      added.add(tag);
-    }
-  }
-  // 再补充未出现过的（按频次倒序 + 字母序）
-  const remaining = allTags.filter((t) => !added.has(t)).sort((a, b) => {
-    const ca = counts.get(a) || 0;
-    const cb = counts.get(b) || 0;
-    if (cb !== ca) return cb - ca;
-    return a.localeCompare(b);
-  });
-  for (const t of remaining) {
-    arr.push({ key: t, label: t, count: counts.get(t) || 0 });
-  }
-  if (untagged > 0) {
-    arr.push({ key: UNTAGGED_KEY, label: "未分类", count: untagged });
-  }
-  return arr;
-});
-
-function selectTag(key: string) {
-  // 再次点击选中的 chip 取消选中
-  if (selectedTag.value === key) {
-    selectedTag.value = "";
-  } else {
-    selectedTag.value = key;
-    if (key && key !== UNTAGGED_KEY) touchTag(key);
-  }
-}
-
 /** 过滤后的条目（标签筛选：tags 数组包含选中标签即匹配，无论位置） */
 const filteredEntries = computed(() => {
   let result = entriesWithUrl.value;
   // 标签筛选
-  if (selectedTag.value === UNTAGGED_KEY) {
+  if (selectedTag.value === UNCATEGORIZED_TAG) {
     result = result.filter((e) => !((e.tags || []).find((t) => !!t)));
+  } else if (isCustomTagSentinel(selectedTag.value)) {
+    const rule = findRule(ruleIdOfSentinel(selectedTag.value));
+    if (rule) {
+      result = result.filter((e) => matchCustomRule(rule, e.url));
+    }
   } else if (selectedTag.value) {
     const want = selectedTag.value;
     result = result.filter((e) => (e.tags || []).includes(want));
@@ -173,10 +128,15 @@ const filteredEntries = computed(() => {
  */
 const groupedEntries = computed(() => {
   // 选中具体标签：单一分组渲染
-  if (selectedTag.value && selectedTag.value !== UNTAGGED_KEY) {
-    return [[selectedTag.value, filteredEntries.value]] as [string, PasswordSummary[]][];
+  if (selectedTag.value && selectedTag.value !== UNCATEGORIZED_TAG) {
+    let groupTitle = selectedTag.value;
+    if (isCustomTagSentinel(selectedTag.value)) {
+      const rule = findRule(ruleIdOfSentinel(selectedTag.value));
+      groupTitle = rule ? rule.name : "自定义筛选";
+    }
+    return [[groupTitle, filteredEntries.value]] as [string, PasswordSummary[]][];
   }
-  if (selectedTag.value === UNTAGGED_KEY) {
+  if (selectedTag.value === UNCATEGORIZED_TAG) {
     return [["未分类", filteredEntries.value]] as [string, PasswordSummary[]][];
   }
   const groups: Record<string, PasswordSummary[]> = {};
@@ -185,20 +145,16 @@ const groupedEntries = computed(() => {
     if (!groups[tag]) groups[tag] = [];
     groups[tag].push(entry);
   }
-  // 按最近使用排序，"未分类" 放最后
+  // 与左侧 TagSidebar 排序一致：按最近使用，"未分类" 放最后
   const recentOrder = recentTags.value;
   const sorted = Object.entries(groups).sort(([a], [b]) => {
     if (a === "未分类") return 1;
     if (b === "未分类") return -1;
     const ai = recentOrder.indexOf(a);
     const bi = recentOrder.indexOf(b);
-    // 两个都在 recent 中：按 recent 顺序
     if (ai >= 0 && bi >= 0) return ai - bi;
-    // 仅 a 在 recent 中：a 排前面
     if (ai >= 0) return -1;
-    // 仅 b 在 recent 中：b 排前面
     if (bi >= 0) return 1;
-    // 两个都不在 recent 中：按字母序
     return a.localeCompare(b);
   });
   return sorted;
@@ -310,87 +266,73 @@ onMounted(loadData);
 
 <template>
   <div class="site-nav-page">
-    <!-- 加载状态 -->
-    <div v-if="loading" class="site-nav-loading">
-      <n-spin size="medium" />
-    </div>
-
-    <!-- 顶部工具栏 -->
-    <div v-else class="site-nav-body">
-    <div class="site-nav-toolbar">
-      <n-input
-        v-model:value="searchQuery"
-        placeholder="搜索网站名称、网址、标签..."
-        clearable
-        style="width: 320px"
-      >
-        <template #prefix>
-          <n-icon :component="SearchOutline" />
-        </template>
-      </n-input>
-    </div>
-
-    <!-- 标签芯片栏 -->
-    <div v-if="tagChips.length" class="tag-chips-bar">
-      <div class="tag-chips-scroll">
-        <span
-          class="tag-chip"
-          :class="{ active: selectedTag === '' }"
-          @click="selectedTag = ''"
-        >
-          全部
-          <span class="chip-count">{{ entriesWithUrl.length }}</span>
-        </span>
-        <span
-          v-for="chip in tagChips"
-          :key="chip.key"
-          class="tag-chip"
-          :class="{ active: selectedTag === chip.key }"
-          @click="selectTag(chip.key)"
-        >
-          {{ chip.label }}
-          <span class="chip-count">{{ chip.count }}</span>
-        </span>
+    <TagSidebar
+      :entries="entriesWithUrl"
+      :selected-tags="selectedTags"
+      sort-mode="recent"
+      :recent-tags-key="RECENT_TAGS_KEY"
+      @update:selected-tags="v => selectedTags = v"
+    />
+    <div class="site-nav-main">
+      <!-- 加载状态 -->
+      <div v-if="loading" class="site-nav-loading">
+        <n-spin size="medium" />
       </div>
-    </div>
 
-    <!-- 空状态 -->
-    <n-empty
-      v-if="!loading && entriesWithUrl.length === 0"
-      description="暂无包含网址的账号记录"
-      style="margin-top: 80px"
-    />
-    <n-empty
-      v-else-if="!loading && filteredEntries.length === 0"
-      description="无匹配结果"
-      style="margin-top: 80px"
-    />
-
-    <!-- 分组卡片宫格 -->
-    <div v-else class="site-nav-groups">
-      <div v-for="[tag, entries] in groupedEntries" :key="tag" class="site-nav-group">
-        <h3 class="group-title">{{ tag }} <span class="group-count">{{ entries.length }}</span></h3>
-        <div class="site-grid">
-          <div
-            v-for="entry in entries"
-            :key="entry.id"
-            class="site-card"
-            @click="handleOpen(entry)"
-            @contextmenu="handleEdit(entry, $event)"
+      <!-- 内容区 -->
+      <div v-else class="site-nav-body">
+        <div class="site-nav-toolbar">
+          <n-input
+            v-model:value="searchQuery"
+            placeholder="搜索网站名称、网址、标签..."
+            clearable
+            style="width: 320px"
           >
-            <div class="card-icon">
-              <img
-                v-if="getCachedFavicon(entry.url)"
-                :src="getCachedFavicon(entry.url)"
-                :alt="getDisplayName(entry)"
-                class="favicon"
-              />
-              <span v-else class="favicon-fallback">
-                {{ getDisplayName(entry).charAt(0) }}
-              </span>
+            <template #prefix>
+              <n-icon :component="SearchOutline" />
+            </template>
+          </n-input>
+        </div>
+
+        <!-- 空状态 -->
+        <n-empty
+          v-if="entriesWithUrl.length === 0"
+          description="暂无包含网址的账号记录"
+          style="margin-top: 80px"
+        />
+        <n-empty
+          v-else-if="filteredEntries.length === 0"
+          description="无匹配结果"
+          style="margin-top: 80px"
+        />
+
+        <!-- 分组卡片宫格 -->
+        <div v-else class="site-nav-groups">
+          <div v-for="[tag, entries] in groupedEntries" :key="tag" class="site-nav-group">
+            <h3 class="group-title">{{ tag }} <span class="group-count">{{ entries.length }}</span></h3>
+            <div class="site-grid">
+              <div
+                v-for="entry in entries"
+                :key="entry.id"
+                class="site-card"
+                @click="handleOpen(entry)"
+                @contextmenu="handleEdit(entry, $event)"
+              >
+                <div class="card-icon">
+                  <img
+                    v-if="getCachedFavicon(entry.url)"
+                    :src="getCachedFavicon(entry.url)"
+                    :alt="getDisplayName(entry)"
+                    class="favicon"
+                  />
+                  <span v-else class="favicon-fallback">
+                    {{ getDisplayName(entry).charAt(0) }}
+                  </span>
+                </div>
+                <span class="card-name">{{ getDisplayName(entry) }}</span>
+                <span class="card-user" :title="entry.userID || '未设置账号'">{{ entry.userID || '—' }}</span>
+              </div>
             </div>
-            <span class="card-name">{{ getDisplayName(entry) }}</span>
-            <span class="card-user" :title="entry.userID || '未设置账号'">{{ entry.userID || '—' }}</span>
           </div>
         </div>
       </div>
@@ -403,15 +345,26 @@ onMounted(loadData);
       @update:show="showEditDialog = $event"
       @saved="loadData"
     />
-    </div>
   </div>
 </template>
 
 <style scoped>
 .site-nav-page {
+  display: flex;
   height: 100%;
+  overflow: hidden;
+  gap: 0;
+}
+
+.site-nav-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: none;
+  padding: 0;
 }
 
 .site-nav-loading {
@@ -422,7 +375,8 @@ onMounted(loadData);
 }
 
 .site-nav-body {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .site-nav-toolbar {
@@ -430,58 +384,6 @@ onMounted(loadData);
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
-}
-
-.tag-chips-bar {
-  margin-bottom: 18px;
-  padding: 10px 14px;
-  background: var(--app-card-bg);
-  border: 1px solid var(--app-border-color, rgba(0, 0, 0, 0.06));
-  border-radius: 10px;
-  box-shadow: var(--app-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.04));
-  backdrop-filter: blur(8px);
-}
-
-.tag-chips-scroll {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  border-radius: 16px;
-  font-size: 13px;
-  cursor: pointer;
-  user-select: none;
-  background: var(--n-color-hover, rgba(0, 0, 0, 0.04));
-  border: 1px solid transparent;
-  transition: all 0.2s ease;
-}
-
-.tag-chip:hover {
-  background: var(--n-color-pressed, rgba(0, 0, 0, 0.08));
-  transform: translateY(-1px);
-}
-
-.tag-chip.active {
-  background: var(--n-color-primary, #18a058);
-  color: #fff;
-  border-color: var(--n-color-primary, #18a058);
-  box-shadow: 0 2px 8px rgba(24, 160, 88, 0.25);
-}
-
-.chip-count {
-  font-size: 11px;
-  opacity: 0.7;
-  margin-left: 2px;
-}
-
-.tag-chip.active .chip-count {
-  opacity: 0.85;
 }
 
 .site-nav-groups {
@@ -598,23 +500,6 @@ onMounted(loadData);
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.06);
   box-shadow: none;
-}
-
-/* 标签芯片栏在深色下同样降级，仅作为内容容器存在 */
-:global(html[data-theme="dark"]) .tag-chips-bar {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  padding: 6px 0;
-}
-
-:global(html[data-theme="dark"]) .tag-chip {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-:global(html[data-theme="dark"]) .tag-chip:hover {
-  background: rgba(255, 255, 255, 0.10);
 }
 
 /* favicon 兜底字符在深色下保留弱底，避免「裸字」 */

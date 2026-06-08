@@ -24,6 +24,12 @@ import TotpCell from "../components/TotpCell.vue";
 import PasswordEditDialog from "../components/PasswordEditDialog.vue";
 import PasswordHistoryDialog from "../components/PasswordHistoryDialog.vue";
 import TagSidebar, { UNCATEGORIZED_TAG } from "../components/TagSidebar.vue";
+import {
+  useCustomTagRules,
+  isCustomTagSentinel,
+  ruleIdOfSentinel,
+  matchCustomRule,
+} from "../composables/useCustomTagRules";
 import WelcomeWidget from "../components/WelcomeWidget.vue";
 import { usePasswordReveal } from "../composables/usePasswordReveal";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -38,6 +44,7 @@ const selectedRole = ref("");  // 空字符串表示"全部"
 const data = ref<PasswordSummary[]>([]);
 const loading = ref(false);
 const selectedTags = ref<string[]>([]);
+const { findRule } = useCustomTagRules();
 
 // 模板查询表：id -> AccountTemplate。仅供「模板」列 chip 渲染使用。
 const templateMap = ref<Record<string, AccountTemplate>>({});
@@ -82,15 +89,21 @@ const filtered = computed<PasswordSummary[]>(() => {
   // 按标签筛选：选中某标签后，所有 tags 包含该标签的记录都显示（含一级和细分位置）
   if (selectedTags.value.length > 0) {
     const wantUncategorized = selectedTags.value.includes(UNCATEGORIZED_TAG);
-    const realTags = selectedTags.value.filter((t) => t !== UNCATEGORIZED_TAG);
+    const customSelected = selectedTags.value
+      .filter((t) => isCustomTagSentinel(t))
+      .map((t) => findRule(ruleIdOfSentinel(t)))
+      .filter((r): r is NonNullable<typeof r> => !!r);
+    const realTags = selectedTags.value.filter(
+      (t) => t !== UNCATEGORIZED_TAG && !isCustomTagSentinel(t),
+    );
     result = result.filter((row) => {
       const tags = (row.tags || []).filter((t) => !!t);
       const matchUncategorized = wantUncategorized && tags.length === 0;
       const matchReal = realTags.length > 0 && tags.some((t) => realTags.includes(t));
-      if (wantUncategorized && realTags.length === 0) return matchUncategorized;
-      if (!wantUncategorized) return matchReal;
-      // 同时选中"未分类"和具体标签：满足任一即可
-      return matchUncategorized || matchReal;
+      const matchCustom =
+        customSelected.length > 0 &&
+        customSelected.some((rule) => matchCustomRule(rule, row.url));
+      return matchUncategorized || matchReal || matchCustom;
     });
   }
   // 按搜索关键词筛选

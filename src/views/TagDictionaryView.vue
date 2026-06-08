@@ -793,10 +793,10 @@ function handleResetCatalog() {
           ]"
           :data="filteredCatalog"
           :max-height="480"
+          :pagination="{ pageSize: 50 }"
           size="small"
           :bordered="false"
           virtual-scroll
-          flex-height
         />
       </div>
     </div>
