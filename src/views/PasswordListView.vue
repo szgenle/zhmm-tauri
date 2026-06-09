@@ -23,7 +23,12 @@ import {
 import TotpCell from "../components/TotpCell.vue";
 import PasswordEditDialog from "../components/PasswordEditDialog.vue";
 import PasswordHistoryDialog from "../components/PasswordHistoryDialog.vue";
-import TagSidebar, { UNCATEGORIZED_TAG } from "../components/TagSidebar.vue";
+import TagSidebar, {
+  UNCATEGORIZED_TAG,
+  isOtherSubSentinel,
+  computeVisibleChildrenMap,
+  entryMatchesOtherSub,
+} from "../components/TagSidebar.vue";
 import {
   useCustomTagRules,
   isCustomTagSentinel,
@@ -93,8 +98,12 @@ const filtered = computed<PasswordSummary[]>(() => {
       .filter((t) => isCustomTagSentinel(t))
       .map((t) => findRule(ruleIdOfSentinel(t)))
       .filter((r): r is NonNullable<typeof r> => !!r);
+    const otherSubSentinels = selectedTags.value.filter((t) => isOtherSubSentinel(t));
+    const visibleChildrenMap = otherSubSentinels.length > 0
+      ? computeVisibleChildrenMap(data.value)
+      : null;
     const realTags = selectedTags.value.filter(
-      (t) => t !== UNCATEGORIZED_TAG && !isCustomTagSentinel(t),
+      (t) => t !== UNCATEGORIZED_TAG && !isCustomTagSentinel(t) && !isOtherSubSentinel(t),
     );
     result = result.filter((row) => {
       const tags = (row.tags || []).filter((t) => !!t);
@@ -103,7 +112,11 @@ const filtered = computed<PasswordSummary[]>(() => {
       const matchCustom =
         customSelected.length > 0 &&
         customSelected.some((rule) => matchCustomRule(rule, row.url));
-      return matchUncategorized || matchReal || matchCustom;
+      const matchOtherSub =
+        otherSubSentinels.length > 0 &&
+        visibleChildrenMap !== null &&
+        otherSubSentinels.some((s) => entryMatchesOtherSub(row, s, visibleChildrenMap));
+      return matchUncategorized || matchReal || matchCustom || matchOtherSub;
     });
   }
   // 按搜索关键词筛选

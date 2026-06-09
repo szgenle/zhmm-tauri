@@ -5,7 +5,13 @@ import { useMessage } from "naive-ui";
 import { api, type PasswordEntry, type PasswordSummary, type SiteSuggestion } from "../api";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import PasswordEditDialog from "../components/PasswordEditDialog.vue";
-import TagSidebar, { UNCATEGORIZED_TAG } from "../components/TagSidebar.vue";
+import TagSidebar, {
+  UNCATEGORIZED_TAG,
+  isOtherSubSentinel,
+  primaryOfOtherSub,
+  computeVisibleChildrenMap,
+  entryMatchesOtherSub,
+} from "../components/TagSidebar.vue";
 import {
   useCustomTagRules,
   isCustomTagSentinel,
@@ -100,6 +106,9 @@ const filteredEntries = computed(() => {
   // 标签筛选
   if (selectedTag.value === UNCATEGORIZED_TAG) {
     result = result.filter((e) => !((e.tags || []).find((t) => !!t)));
+  } else if (isOtherSubSentinel(selectedTag.value)) {
+    const visibleMap = computeVisibleChildrenMap(entriesWithUrl.value);
+    result = result.filter((e) => entryMatchesOtherSub(e, selectedTag.value, visibleMap));
   } else if (isCustomTagSentinel(selectedTag.value)) {
     const rule = findRule(ruleIdOfSentinel(selectedTag.value));
     if (rule) {
@@ -122,26 +131,92 @@ const filteredEntries = computed(() => {
   return result;
 });
 
-/** 按标签分组：
- * - 未选标签时：每条按其首个标签归入对应分组，无标签归入"未分类"
- * - 选中某具体标签时：所有匹配记录统一归入该标签分组（避免分散到各自一级组）
+/** 二级子组兜底标签：所属一级分组下没有 tags[1] 的条目归入此组 */
+const OTHER_SUB_TAG = "其它";
+
+interface SubGroup {
+  tag: string;
+  entries: PasswordSummary[];
+}
+interface PrimaryGroup {
+  tag: string;
+  count: number;
+  subgroups: SubGroup[];
+}
+
+/** 在指定一级分组内，按 tags[1] 拆分子组：
+ * - visibleSubs 给出该一级分组下「频次 ≥ 阈值」的二级标签集合（与左侧 TagSidebar 对齐）
+ * - 不在 visibleSubs 内的二级标签 / 无 tags[1] 的条目 → 「其它」子组
+ * - 子组排序：按条目数降序，「其它」固定排末尾
  */
-const groupedEntries = computed(() => {
-  // 选中具体标签：单一分组渲染
+function buildSubgroups(entries: PasswordSummary[], visibleSubs?: Set<string>): SubGroup[] {
+  const map: Record<string, PasswordSummary[]> = {};
+  for (const e of entries) {
+    const ts = (e.tags || []).filter((t) => !!t);
+    let sub = OTHER_SUB_TAG;
+    if (visibleSubs) {
+      // 在 tags[1:] 中找第一个落入 visibleSubs 的标签
+      const hit = ts.slice(1).find((t) => visibleSubs.has(t));
+      if (hit) sub = hit;
+    } else if (ts.length >= 2 && ts[1]) {
+      sub = ts[1];
+    }
+    if (!map[sub]) map[sub] = [];
+    map[sub].push(e);
+  }
+  const subs = Object.entries(map).map(([tag, items]) => ({ tag, entries: items }));
+  subs.sort((a, b) => {
+    if (a.tag === OTHER_SUB_TAG) return 1;
+    if (b.tag === OTHER_SUB_TAG) return -1;
+    if (b.entries.length !== a.entries.length) return b.entries.length - a.entries.length;
+    return a.tag.localeCompare(b.tag);
+  });
+  return subs;
+}
+
+/** 按标签分组（两级）：
+ * - 一级：tags[0]，无则归入"未分类"
+ * - 二级：tags[1]，无则归入"其它"（在所属一级组内）
+ * - 选中具体标签时：单一一级分组，内部仍按 tags[1] 细分
+ */
+const groupedEntries = computed<PrimaryGroup[]>(() => {
+  // 全局阈值可见子标签集（与左侧 TagSidebar 对齐：频次 ≥ CHILD_MIN_COUNT 的 tags[1:] 才独立显示）
+  const visibleMap = computeVisibleChildrenMap(entriesWithUrl.value);
+
+  // 选中具体标签：单一一级分组，内部保留二级分组
   if (selectedTag.value && selectedTag.value !== UNCATEGORIZED_TAG) {
     let groupTitle = selectedTag.value;
     if (isCustomTagSentinel(selectedTag.value)) {
       const rule = findRule(ruleIdOfSentinel(selectedTag.value));
       groupTitle = rule ? rule.name : "自定义筛选";
+    } else if (isOtherSubSentinel(selectedTag.value)) {
+      // 「其它」虚拟标签：所有命中条目作为单一分组展示，不再按 tags[1] 细分
+      groupTitle = `${primaryOfOtherSub(selectedTag.value)} · 其它`;
+      return [{
+        tag: groupTitle,
+        count: filteredEntries.value.length,
+        subgroups: [{ tag: OTHER_SUB_TAG, entries: filteredEntries.value }],
+      }];
     }
-    return [[groupTitle, filteredEntries.value]] as [string, PasswordSummary[]][];
+    // 选中真实一级标签时，该分组内沿用全局可见集做二级细分
+    const visibleForThis = visibleMap.get(selectedTag.value);
+    return [{
+      tag: groupTitle,
+      count: filteredEntries.value.length,
+      subgroups: buildSubgroups(filteredEntries.value, visibleForThis),
+    }];
   }
   if (selectedTag.value === UNCATEGORIZED_TAG) {
-    return [["未分类", filteredEntries.value]] as [string, PasswordSummary[]][];
+    return [{
+      tag: "未分类",
+      count: filteredEntries.value.length,
+      subgroups: [{ tag: OTHER_SUB_TAG, entries: filteredEntries.value }],
+    }];
   }
+  // 未选标签：按 tags[0] 一级聚合
   const groups: Record<string, PasswordSummary[]> = {};
   for (const entry of filteredEntries.value) {
-    const tag = (entry.tags && entry.tags.length > 0) ? entry.tags[0] : "未分类";
+    const tag = (entry.tags && entry.tags.length > 0 && entry.tags[0]) ? entry.tags[0] : "未分类";
     if (!groups[tag]) groups[tag] = [];
     groups[tag].push(entry);
   }
@@ -157,7 +232,14 @@ const groupedEntries = computed(() => {
     if (bi >= 0) return 1;
     return a.localeCompare(b);
   });
-  return sorted;
+  return sorted.map(([tag, items]) => ({
+    tag,
+    count: items.length,
+    // 默认视图：频次 ≥ 阈值的二级标签独立子组，其余汇总到「其它」
+    subgroups: tag === "未分类"
+      ? [{ tag: OTHER_SUB_TAG, entries: items }]
+      : buildSubgroups(items, visibleMap.get(tag)),
+  }));
 });
 
 /** 加载数据 */
@@ -306,33 +388,45 @@ onMounted(loadData);
           style="margin-top: 80px"
         />
 
-        <!-- 分组卡片宫格 -->
+        <!-- 分组卡片宫格（一级 → 二级） -->
         <div v-else class="site-nav-groups">
-          <div v-for="[tag, entries] in groupedEntries" :key="tag" class="site-nav-group">
-            <h3 class="group-title">{{ tag }} <span class="group-count">{{ entries.length }}</span></h3>
-            <div class="site-grid">
-              <div
-                v-for="entry in entries"
-                :key="entry.id"
-                class="site-card"
-                @click="handleOpen(entry)"
-                @contextmenu="handleEdit(entry, $event)"
+          <div v-for="group in groupedEntries" :key="group.tag" class="site-nav-group">
+            <h3 class="group-title">
+              {{ group.tag }}
+              <span class="group-count">{{ group.count }}</span>
+            </h3>
+            <template v-for="sub in group.subgroups" :key="sub.tag">
+              <h4
+                v-if="!(group.subgroups.length === 1 && sub.tag === '其它')"
+                class="subgroup-title"
               >
-                <div class="card-icon">
-                  <img
-                    v-if="getCachedFavicon(entry.url)"
-                    :src="getCachedFavicon(entry.url)"
-                    :alt="getDisplayName(entry)"
-                    class="favicon"
-                  />
-                  <span v-else class="favicon-fallback">
-                    {{ getDisplayName(entry).charAt(0) }}
-                  </span>
+                {{ sub.tag }}
+                <span class="group-count">{{ sub.entries.length }}</span>
+              </h4>
+              <div class="site-grid">
+                <div
+                  v-for="entry in sub.entries"
+                  :key="entry.id"
+                  class="site-card"
+                  @click="handleOpen(entry)"
+                  @contextmenu="handleEdit(entry, $event)"
+                >
+                  <div class="card-icon">
+                    <img
+                      v-if="getCachedFavicon(entry.url)"
+                      :src="getCachedFavicon(entry.url)"
+                      :alt="getDisplayName(entry)"
+                      class="favicon"
+                    />
+                    <span v-else class="favicon-fallback">
+                      {{ getDisplayName(entry).charAt(0) }}
+                    </span>
+                  </div>
+                  <span class="card-name">{{ getDisplayName(entry) }}</span>
+                  <span class="card-user" :title="entry.userID || '未设置账号'">{{ entry.userID || '—' }}</span>
                 </div>
-                <span class="card-name">{{ getDisplayName(entry) }}</span>
-                <span class="card-user" :title="entry.userID || '未设置账号'">{{ entry.userID || '—' }}</span>
               </div>
-            </div>
+            </template>
           </div>
         </div>
       </div>
@@ -397,6 +491,13 @@ onMounted(loadData);
   font-weight: 600;
   margin: 0 0 12px 4px;
   opacity: 0.7;
+}
+
+.subgroup-title {
+  font-size: 12px;
+  font-weight: 500;
+  margin: 14px 0 8px 12px;
+  opacity: 0.55;
 }
 
 .group-count {
