@@ -26,6 +26,7 @@ interface TagItem {
 
 const allTags = ref<{ tag: string; count: number }[]>([]);
 const recentList = ref<string[]>([]);
+const primaryTags = ref<string[]>([]);
 const keyword = ref("");
 const newTagInput = ref("");
 const loading = ref(false);
@@ -51,9 +52,13 @@ function loadRecent(): string[] {
 async function refresh() {
   loading.value = true;
   try {
-    const counts = await api.collectTagCounts();
+    const [counts, primary] = await Promise.all([
+      api.collectTagCounts(),
+      api.getUserPrimaryTags().catch(() => [] as string[]),
+    ]);
     allTags.value = counts.map((c) => ({ tag: c.tag, count: c.count }));
     recentList.value = loadRecent();
+    primaryTags.value = primary;
   } catch (e: any) {
     message.error(`加载标签失败: ${e}`);
   } finally {
@@ -99,6 +104,21 @@ const filteredTags = computed<TagItem[]>(() => {
   const kw = keyword.value.trim().toLowerCase();
   if (!kw) return orderedTags.value;
   return orderedTags.value.filter((t: TagItem) => t.tag.toLowerCase().includes(kw));
+});
+
+/** 一级标签集合 */
+const primarySet = computed(() => new Set(primaryTags.value));
+
+/** 一级标签组（仅在有配置且未搜索时拆分，搜索时合入 filteredTags 即可） */
+const primaryGroup = computed<TagItem[]>(() => {
+  if (!primaryTags.value.length) return [];
+  return filteredTags.value.filter((t) => primarySet.value.has(t.tag));
+});
+
+/** 其余标签组 */
+const otherGroup = computed<TagItem[]>(() => {
+  if (!primaryTags.value.length) return filteredTags.value;
+  return filteredTags.value.filter((t) => !primarySet.value.has(t.tag));
 });
 
 const selectedSet = computed(() => new Set(props.selectedTags));
@@ -149,20 +169,46 @@ function addCustomTag() {
         <div v-if="!filteredTags.length" class="empty-hint">
           {{ keyword ? "没有匹配的标签" : "暂无标签，先在下方输入新建一个吧" }}
         </div>
-        <div
-          v-for="item in filteredTags"
-          :key="item.tag"
-          class="tag-row"
-          :class="{ selected: selectedSet.has(item.tag) }"
-          @click="toggle(item.tag)"
-        >
-          <span class="tag-name">#{{ item.tag }}</span>
-          <span v-if="item.recent" class="badge badge-recent">最近</span>
-          <span v-if="item.count > 0" class="badge badge-count">{{ item.count }}</span>
-          <span class="state">
-            {{ selectedSet.has(item.tag) ? "✓" : "" }}
-          </span>
-        </div>
+
+        <!-- 一级标签分组 -->
+        <template v-if="primaryGroup.length">
+          <div class="group-header">一级标签</div>
+          <div
+            v-for="item in primaryGroup"
+            :key="'p-' + item.tag"
+            class="tag-row"
+            :class="{ selected: selectedSet.has(item.tag) }"
+            @click="toggle(item.tag)"
+          >
+            <span class="tag-name">#{{ item.tag }}</span>
+            <span class="badge badge-primary">一级</span>
+            <span v-if="item.recent" class="badge badge-recent">最近</span>
+            <span v-if="item.count > 0" class="badge badge-count">{{ item.count }}</span>
+            <span class="state">
+              {{ selectedSet.has(item.tag) ? "✓" : "" }}
+            </span>
+          </div>
+          <div v-if="otherGroup.length" class="group-divider"></div>
+        </template>
+
+        <!-- 其他标签 -->
+        <template v-if="otherGroup.length">
+          <div v-if="primaryGroup.length" class="group-header">其他标签</div>
+          <div
+            v-for="item in otherGroup"
+            :key="'o-' + item.tag"
+            class="tag-row"
+            :class="{ selected: selectedSet.has(item.tag) }"
+            @click="toggle(item.tag)"
+          >
+            <span class="tag-name">#{{ item.tag }}</span>
+            <span v-if="item.recent" class="badge badge-recent">最近</span>
+            <span v-if="item.count > 0" class="badge badge-count">{{ item.count }}</span>
+            <span class="state">
+              {{ selectedSet.has(item.tag) ? "✓" : "" }}
+            </span>
+          </div>
+        </template>
       </div>
     </n-spin>
 
@@ -233,6 +279,10 @@ function addCustomTag() {
   border-radius: 8px;
   line-height: 1.4;
 }
+.badge-primary {
+  background: rgba(32, 128, 240, 0.12);
+  color: #2080f0;
+}
 .badge-recent {
   background: rgba(24, 160, 88, 0.15);
   color: #18a058;
@@ -240,6 +290,19 @@ function addCustomTag() {
 .badge-count {
   background: rgba(0, 0, 0, 0.06);
   color: var(--n-text-color-3, #888);
+}
+.group-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--n-text-color-3, #999);
+  padding: 6px 10px 2px;
+  letter-spacing: 0.5px;
+}
+.group-divider {
+  height: 1px;
+  background: var(--app-border-color, #e0e0e6);
+  margin: 6px 10px;
+  opacity: 0.6;
 }
 .state {
   width: 14px;
