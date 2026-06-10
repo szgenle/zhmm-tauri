@@ -90,9 +90,7 @@ pub fn reset_site_catalog(
 
 /// 用户是否有自定义词典数据
 #[tauri::command]
-pub fn has_user_catalog(
-    user_catalog: State<'_, site_catalog::UserCatalogState>,
-) -> bool {
+pub fn has_user_catalog(user_catalog: State<'_, site_catalog::UserCatalogState>) -> bool {
     user_catalog.has_user_data()
 }
 

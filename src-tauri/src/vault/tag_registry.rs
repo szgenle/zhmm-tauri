@@ -161,12 +161,14 @@ impl VaultState {
 
         // 也加入注册表中定义但未被使用的标签
         for def in &data.tag_registry {
-            stats_map.entry(def.name.clone()).or_insert_with(|| TagStats {
-                name: def.name.clone(),
-                count: 0,
-                primary_count: 0,
-                in_catalog: catalog_tags.contains(&def.name),
-            });
+            stats_map
+                .entry(def.name.clone())
+                .or_insert_with(|| TagStats {
+                    name: def.name.clone(),
+                    count: 0,
+                    primary_count: 0,
+                    in_catalog: catalog_tags.contains(&def.name),
+                });
         }
 
         let mut result: Vec<TagStats> = stats_map.into_values().collect();

@@ -158,7 +158,10 @@ impl UserCatalogState {
                 entry.insert(
                     "tags".into(),
                     serde_json::Value::Array(
-                        item.tags.iter().map(|t| serde_json::Value::String(t.clone())).collect(),
+                        item.tags
+                            .iter()
+                            .map(|t| serde_json::Value::String(t.clone()))
+                            .collect(),
                     ),
                 );
                 sites.insert(host.clone(), serde_json::Value::Object(entry));
@@ -433,7 +436,11 @@ pub fn export_catalog(
         obj.insert(
             "tags".into(),
             serde_json::Value::Array(
-                entry.tags.iter().map(|t| serde_json::Value::String(t.clone())).collect(),
+                entry
+                    .tags
+                    .iter()
+                    .map(|t| serde_json::Value::String(t.clone()))
+                    .collect(),
             ),
         );
         sites.insert(entry.host.clone(), serde_json::Value::Object(obj));
@@ -459,8 +466,8 @@ pub fn export_catalog(
 /// 从 JSON 文件导入为用户词典（完全替换用户层）
 pub fn import_catalog(user_state: &UserCatalogState, src: &str) -> AppResult<usize> {
     let bytes = fs::read(src).map_err(|e| AppError::Other(format!("读取文件失败: {e}")))?;
-    let raw: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|e| AppError::Other(format!("JSON 解析失败: {e}")))?;
+    let raw: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|e| AppError::Other(format!("JSON 解析失败: {e}")))?;
 
     let sites_obj = raw
         .get("sites")
@@ -477,7 +484,11 @@ pub fn import_catalog(user_state: &UserCatalogState, src: &str) -> AppResult<usi
         let tags: Vec<String> = info
             .get("tags")
             .and_then(|t| t.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
         new_data.insert(host.trim().to_lowercase(), CatalogItem { name, tags });
     }
@@ -511,8 +522,7 @@ pub fn reset_user_catalog(user_state: &UserCatalogState) -> AppResult<()> {
 
 const PRESET_SITES_JSON: &str = include_str!("../../resources/catalogs/sites.json");
 
-const PRESET_PERSONA_BASE_JSON: &str =
-    include_str!("../../resources/catalogs/personas/base.json");
+const PRESET_PERSONA_BASE_JSON: &str = include_str!("../../resources/catalogs/personas/base.json");
 const PRESET_PERSONA_DEVELOPER_JSON: &str =
     include_str!("../../resources/catalogs/personas/developer.json");
 const PRESET_PERSONA_GAME_DEV_JSON: &str =
@@ -572,7 +582,9 @@ static PRESET_PERSONAS_NEXT: LazyLock<Vec<PresetPersona>> = LazyLock::new(|| {
         PRESET_PERSONA_SMALL_BIZ_JSON,
         PRESET_PERSONA_CROSS_BORDER_JSON,
     ];
-    raws.iter().filter_map(|json| parse_preset_persona(json)).collect()
+    raws.iter()
+        .filter_map(|json| parse_preset_persona(json))
+        .collect()
 });
 
 fn parse_preset_persona(json: &str) -> Option<PresetPersona> {

@@ -2,7 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{default_templates, now_ts, AccountTemplate, PasswordEntry, TagDefinition, DEFAULT_ROLES};
+use super::{
+    default_templates, now_ts, AccountTemplate, PasswordEntry, TagDefinition, DEFAULT_ROLES,
+};
 
 /// 账号库明文模型（v7 schema）；顶层 `{ data, roles, utime, templates? }`
 ///

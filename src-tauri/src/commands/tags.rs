@@ -41,10 +41,7 @@ pub fn list_tag_registry(state: State<'_, VaultState>) -> AppResult<Vec<TagDefin
 }
 
 #[tauri::command]
-pub fn save_tag_registry(
-    items: Vec<TagDefinition>,
-    state: State<'_, VaultState>,
-) -> AppResult<()> {
+pub fn save_tag_registry(items: Vec<TagDefinition>, state: State<'_, VaultState>) -> AppResult<()> {
     state.save_tag_registry(items)
 }
 
