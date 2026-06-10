@@ -42,8 +42,8 @@ impl SiteSuggestion {
     }
 }
 
-/// 内嵌的 JSON 数据（复用 catalogs.next/sites.json 站点全集，唯一事实源）
-const CATALOG_JSON: &str = include_str!("../../resources/catalogs.next/sites.json");
+/// 内嵌的 JSON 数据（复用 catalogs/sites.json 站点全集，唯一事实源）
+const CATALOG_JSON: &str = include_str!("../../resources/catalogs/sites.json");
 
 /// 缓存的内置词典（只读）
 struct CatalogData {
@@ -499,9 +499,9 @@ pub fn reset_user_catalog(user_state: &UserCatalogState) -> AppResult<()> {
     Ok(())
 }
 
-// ========== 预制身份词典（resources/catalogs.next/，编译进二进制） ==========
+// ========== 预制身份词典（resources/catalogs/，编译进二进制） ==========
 //
-// 数据布局（与旧 catalogs/<persona>.json 不同）：
+// 数据布局（站点全集 + 身份元信息分离）：
 // - sites.json：站点全集，唯一事实源（与身份解耦，每个 site 的 tags 中已注入身份标签）
 // - personas/<id>.json：每个身份只保留 _meta（含 primary_tags），不再包含 sites 子集
 //
@@ -509,20 +509,20 @@ pub fn reset_user_catalog(user_state: &UserCatalogState) -> AppResult<()> {
 // - 把 sites.json 全集合并进用户词典（按 override_tags 三态归类：added/overwritten/kept）
 // - 把对应 persona 的 primary_tags 追加到用户 primary_tags（去重，保留用户已有顺序）
 
-const PRESET_SITES_JSON: &str = include_str!("../../resources/catalogs.next/sites.json");
+const PRESET_SITES_JSON: &str = include_str!("../../resources/catalogs/sites.json");
 
 const PRESET_PERSONA_BASE_JSON: &str =
-    include_str!("../../resources/catalogs.next/personas/base.json");
+    include_str!("../../resources/catalogs/personas/base.json");
 const PRESET_PERSONA_DEVELOPER_JSON: &str =
-    include_str!("../../resources/catalogs.next/personas/developer.json");
+    include_str!("../../resources/catalogs/personas/developer.json");
 const PRESET_PERSONA_GAME_DEV_JSON: &str =
-    include_str!("../../resources/catalogs.next/personas/game-dev.json");
+    include_str!("../../resources/catalogs/personas/game-dev.json");
 const PRESET_PERSONA_CREATOR_JSON: &str =
-    include_str!("../../resources/catalogs.next/personas/creator.json");
+    include_str!("../../resources/catalogs/personas/creator.json");
 const PRESET_PERSONA_SMALL_BIZ_JSON: &str =
-    include_str!("../../resources/catalogs.next/personas/small-biz.json");
+    include_str!("../../resources/catalogs/personas/small-biz.json");
 const PRESET_PERSONA_CROSS_BORDER_JSON: &str =
-    include_str!("../../resources/catalogs.next/personas/cross-border.json");
+    include_str!("../../resources/catalogs/personas/cross-border.json");
 
 /// 单份 persona 的元信息（不含 sites 子集——sites 是全集，与身份解耦）
 struct PresetPersona {

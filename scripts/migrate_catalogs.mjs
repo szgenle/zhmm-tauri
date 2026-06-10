@@ -1,12 +1,15 @@
 #!/usr/bin/env node
-// 迁移脚本：把 resources/catalogs/{base,creator,...}.json 合并去重为
-//   - resources/catalogs.next/sites.json           （站点全集，唯一事实源）
-//   - resources/catalogs.next/personas/<id>.json   （每个身份只保留 primary_tags + 元信息）
+// [HISTORICAL] 一次性迁移脚本（已完成使命，留作参考）：
+// 当年把 resources/catalogs/{base,creator,...}.json（每身份带 sites 子集）合并去重为
+//   - resources/catalogs/sites.json           （站点全集，唯一事实源）
+//   - resources/catalogs/personas/<id>.json   （每个身份只保留 primary_tags + 元信息）
+//
+// 当前数据布局已是合并后的结构，脚本不再适用，重跑前请先备份。
 //
 // 用法：
 //   node scripts/migrate_catalogs.mjs            # dry-run，仅打印统计与冲突预览
-//   node scripts/migrate_catalogs.mjs --apply    # 实际写入 resources/catalogs.next/
-//   node scripts/migrate_catalogs.mjs --apply --out resources/catalogs.next
+//   node scripts/migrate_catalogs.mjs --apply    # 实际写入 OUT_DIR
+//   node scripts/migrate_catalogs.mjs --apply --out resources/catalogs.merged
 //
 // 设计：
 // - 每个 site 不保留 personas 字段（站点-标签是客观事实，与身份解耦）
@@ -25,7 +28,7 @@ const SRC_DIR = path.join(ROOT, "resources/catalogs");
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
 const outIdx = args.indexOf("--out");
-const OUT_DIR = outIdx >= 0 ? path.resolve(ROOT, args[outIdx + 1]) : path.join(ROOT, "resources/catalogs.next");
+const OUT_DIR = outIdx >= 0 ? path.resolve(ROOT, args[outIdx + 1]) : path.join(ROOT, "resources/catalogs.merged");
 
 // 优先级：name 冲突时取靠前者；同时决定 personas 数组的顺序
 // 注意：crypto persona 已整体排除（合规考虑），不再读取 crypto.json
