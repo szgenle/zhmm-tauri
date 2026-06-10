@@ -9,7 +9,19 @@ import {
   SaveOutline,
 } from "@vicons/ionicons5";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { api, type CatalogTagStat, type PresetPersonaInfo, type SiteCatalogEntry } from "../api";
+import { api, type CatalogTagStat, type PasswordSummary, type PresetPersonaInfo, type SiteCatalogEntry } from "../api";
+import TagSidebar, {
+  UNCATEGORIZED_TAG,
+  isOtherSubSentinel,
+  computeVisibleChildrenMap,
+  entryMatchesOtherSub,
+} from "../components/TagSidebar.vue";
+import {
+  useCustomTagRules,
+  isCustomTagSentinel,
+  ruleIdOfSentinel,
+  matchCustomRule,
+} from "../composables/useCustomTagRules";
 
 const message = useMessage();
 const dialog = useDialog();
@@ -27,6 +39,32 @@ const catalogBusy = ref(false);
 const hasUserCatalog = ref(false);
 const keyword = ref("");
 const siteKeyword = ref("");
+
+// ========== 左侧标签侧栏 ==========
+const selectedTags = ref<string[]>([]);
+const selectedTag = computed(() => selectedTags.value[0] || "");
+const { findRule } = useCustomTagRules();
+
+/** 将 SiteCatalogEntry 映射为 TagSidebar 所需的 PasswordSummary 格式 */
+const sidebarEntries = computed<PasswordSummary[]>(() =>
+  siteEntries.value.map((s, i) => ({
+    id: i,
+    role: "",
+    name: s.name,
+    userID: "",
+    phone: "",
+    email: "",
+    url: s.host,
+    desc: "",
+    tags: s.tags,
+    has_totp: false,
+    utime: 0,
+    pwd_utime: 0,
+  }))
+);
+
+/** primarySet 转数组给 TagSidebar */
+const primaryTagsArray = computed(() => Array.from(primarySet.value));
 
 async function loadAll() {
   loading.value = true;
@@ -53,9 +91,16 @@ onMounted(loadAll);
 
 // ========== 标签筛选 / 统计 ==========
 const filteredStats = computed(() => {
+  let result = tagStats.value;
+  // 侧栏标签筛选：选中某标签时只显示该标签的 stat
+  if (selectedTag.value && selectedTag.value !== UNCATEGORIZED_TAG
+    && !isOtherSubSentinel(selectedTag.value)
+    && !isCustomTagSentinel(selectedTag.value)) {
+    result = result.filter((s) => s.tag === selectedTag.value);
+  }
   const kw = keyword.value.trim().toLowerCase();
-  if (!kw) return tagStats.value;
-  return tagStats.value.filter((s) => s.tag.toLowerCase().includes(kw));
+  if (!kw) return result;
+  return result.filter((s) => s.tag.toLowerCase().includes(kw));
 });
 
 const totalTags = computed(() => tagStats.value.length);
@@ -122,14 +167,39 @@ function tagRowProps(row: CatalogTagStat) {
 
 // ========== 站点表 ==========
 const filteredSites = computed(() => {
+  let result = siteEntries.value;
+  const pSet = new Set<string>(primarySet.value);
+
+  // 侧栏标签筛选
+  if (selectedTag.value === UNCATEGORIZED_TAG) {
+    if (pSet.size > 0) {
+      result = result.filter((s) => !s.tags.some((t) => pSet.has(t)));
+    } else {
+      result = result.filter((s) => s.tags.length === 0);
+    }
+  } else if (isOtherSubSentinel(selectedTag.value)) {
+    const visibleMap = computeVisibleChildrenMap(sidebarEntries.value, undefined, pSet);
+    result = result.filter((_s, i) => entryMatchesOtherSub(sidebarEntries.value[i], selectedTag.value, visibleMap, pSet));
+  } else if (isCustomTagSentinel(selectedTag.value)) {
+    const rule = findRule(ruleIdOfSentinel(selectedTag.value));
+    if (rule) {
+      result = result.filter((s) => matchCustomRule(rule, s.host));
+    }
+  } else if (selectedTag.value) {
+    result = result.filter((s) => s.tags.includes(selectedTag.value));
+  }
+
+  // 关键字搜索
   const kw = siteKeyword.value.trim().toLowerCase();
-  if (!kw) return siteEntries.value;
-  return siteEntries.value.filter(
-    (s) =>
-      s.host.toLowerCase().includes(kw) ||
-      s.name.toLowerCase().includes(kw) ||
-      s.tags.some((t) => t.toLowerCase().includes(kw)),
-  );
+  if (kw) {
+    result = result.filter(
+      (s) =>
+        s.host.toLowerCase().includes(kw) ||
+        s.name.toLowerCase().includes(kw) ||
+        s.tags.some((t) => t.toLowerCase().includes(kw)),
+    );
+  }
+  return result;
 });
 
 const siteColumns = computed(() => [
@@ -305,6 +375,14 @@ async function confirmImportPreset() {
 
 <template>
   <div class="tag-dict-page">
+    <TagSidebar
+      :entries="sidebarEntries"
+      :selected-tags="selectedTags"
+      :primary-tags="primaryTagsArray"
+      sort-mode="frequency"
+      @update:selected-tags="v => selectedTags = v"
+    />
+    <div class="tag-dict-main">
     <div class="catalog-toolbar">
       <n-space align="center" :size="8">
         <n-button
@@ -536,14 +614,23 @@ async function confirmImportPreset() {
         </n-space>
       </template>
     </n-modal>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .tag-dict-page {
   display: flex;
-  flex-direction: column;
   height: 100%;
+  overflow: hidden;
+  gap: 0;
+}
+
+.tag-dict-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
 }

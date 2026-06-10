@@ -206,6 +206,33 @@ impl VaultState {
         Ok(updated)
     }
 
+    /// 批量给指定条目追加标签（已有则跳过），返回实际修改的条目数
+    pub fn batch_add_tag(&self, ids: &[i64], tag: &str) -> AppResult<usize> {
+        let tag = tag.trim().to_string();
+        if tag.is_empty() {
+            return Ok(0);
+        }
+        let mut count = 0usize;
+        {
+            let mut guard = self.data.write();
+            let data = guard.as_mut().ok_or(AppError::Locked)?;
+            for entry in data.entries.iter_mut() {
+                if ids.contains(&entry.id) && !entry.tags.contains(&tag) {
+                    entry.tags.push(tag.clone());
+                    entry.utime = now_ts();
+                    count += 1;
+                }
+            }
+            if count > 0 {
+                data.utime = now_ts();
+            }
+        }
+        if count > 0 {
+            self.persist_with_cached()?;
+        }
+        Ok(count)
+    }
+
     /// 收集密码库中所有条目的 URL host 及其标签（同 host 多条目标签合并），用于导出词典时补充
     pub fn collect_url_hosts(&self) -> AppResult<Vec<(String, Vec<String>)>> {
         let guard = self.data.read();

@@ -54,3 +54,13 @@ pub fn rollback_password(
 ) -> AppResult<PasswordEntry> {
     state.rollback_password(id, history_index)
 }
+
+/// 批量给指定条目追加标签（不重复），返回实际修改的条目数
+#[tauri::command]
+pub fn batch_add_tag(
+    ids: Vec<i64>,
+    tag: String,
+    state: State<'_, VaultState>,
+) -> AppResult<usize> {
+    state.batch_add_tag(&ids, &tag)
+}

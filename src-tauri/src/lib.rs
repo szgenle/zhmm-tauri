@@ -103,6 +103,8 @@ pub fn run() {
             commands::path_exists,
             commands::legacy_vault_exists,
             commands::cache_favicon,
+            commands::check_url_health,
+            commands::batch_add_tag,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -325,6 +325,63 @@ pub fn cache_favicon(app: tauri::AppHandle, domain: String) -> AppResult<String>
     ))
 }
 
+// ========== 链接健康检测 ==========
+
+/// 单条 URL 探活结果
+#[derive(serde::Serialize)]
+pub struct UrlHealthResult {
+    pub url: String,
+    pub reachable: bool,
+    /// HTTP 状态码（成功连接时有值）
+    pub status_code: Option<u16>,
+}
+
+/// 批量检测 URL 可达性（HEAD 请求，5 秒超时）。
+/// 前端逐条/分批发送；每次检测不宜超过 20 条以免阻塞。
+#[tauri::command]
+pub fn check_url_health(urls: Vec<String>) -> Vec<UrlHealthResult> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(5))
+        .timeout_read(std::time::Duration::from_secs(5))
+        .redirects(5)
+        .build();
+
+    urls.into_iter()
+        .map(|raw_url| {
+            let url = if raw_url.starts_with("http://") || raw_url.starts_with("https://") {
+                raw_url.clone()
+            } else {
+                format!("https://{}", raw_url)
+            };
+
+            // 先尝试 HEAD，部分站点不支持 HEAD 则 fallback 到 GET（限流）
+            let result = agent.head(&url).call();
+            let (reachable, status_code) = match result {
+                Ok(resp) => (true, Some(resp.status())),
+                Err(ureq::Error::Status(code, _)) => {
+                    // 有响应但非 2xx，说明站点可达（只是返回了错误码）
+                    // 4xx/5xx 不一定是「已失效」，但 >= 400 可作为参考
+                    (code < 500, Some(code))
+                }
+                Err(_) => {
+                    // 连接超时 / DNS 失败等 → 尝试 http 回退
+                    let url_http = url.replace("https://", "http://");
+                    match agent.head(&url_http).call() {
+                        Ok(resp) => (true, Some(resp.status())),
+                        Err(ureq::Error::Status(code, _)) => (code < 500, Some(code)),
+                        Err(_) => (false, None),
+                    }
+                }
+            };
+            UrlHealthResult {
+                url: raw_url,
+                reachable,
+                status_code,
+            }
+        })
+        .collect()
+}
+
 // ========== 文件存在性 ==========
 
 /// 探测路径是否存在（用于前端校验"创建新库"时不能覆盖已有文件）

@@ -376,11 +376,25 @@ export const api = {
   cacheFavicon(domain: string): Promise<string> {
     return invoke("cache_favicon", { domain });
   },
+  // 链接健康检测
+  checkUrlHealth(urls: string[]): Promise<UrlHealthResult[]> {
+    return invoke("check_url_health", { urls });
+  },
+  // 批量追加标签
+  batchAddTag(ids: number[], tag: string): Promise<number> {
+    return invoke("batch_add_tag", { ids, tag });
+  },
 };
 
 export interface TotpCode {
   code: string;
   remaining_seconds: number;
+}
+
+export interface UrlHealthResult {
+  url: string;
+  reachable: boolean;
+  status_code: number | null;
 }
 
 export interface OtpAuthParams {
