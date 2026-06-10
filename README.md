@@ -93,6 +93,16 @@
       <img src="docs/screenshots/07-role-management.png" alt="分类管理" /><br/>
       <sub><b>分类管理：手机号 / 邮箱 概览</b></sub>
     </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/08-tag-dictionary.png" alt="标签词典" /><br/>
+      <sub><b>标签词典：标签注册与统计</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/09-template-management.png" alt="模板管理" /><br/>
+      <sub><b>模板管理：账号模板配置</b></sub>
+    </td>
     <td align="center" width="50%"></td>
   </tr>
 </table>

@@ -192,9 +192,7 @@ impl VaultState {
             if primary.is_empty() {
                 continue;
             }
-            let children_set = hierarchy
-                .entry(primary.clone())
-                .or_insert_with(std::collections::HashSet::new);
+            let children_set = hierarchy.entry(primary.clone()).or_default();
             for tag in entry.tags.iter().skip(1) {
                 if !tag.is_empty() {
                     children_set.insert(tag.clone());
