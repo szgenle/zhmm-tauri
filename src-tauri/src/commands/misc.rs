@@ -354,21 +354,31 @@ pub fn check_url_health(urls: Vec<String>) -> Vec<UrlHealthResult> {
                 format!("https://{}", raw_url)
             };
 
-            // 先尝试 HEAD，部分站点不支持 HEAD 则 fallback 到 GET（限流）
+            // 判断状态码是否表示站点已失效
+            // 404=Not Found, 410=Gone, 5xx=服务端错误 → 视为不可达
+            fn is_dead_status(code: u16) -> bool {
+                code == 404 || code == 410 || code >= 500
+            }
+
             let result = agent.head(&url).call();
             let (reachable, status_code) = match result {
-                Ok(resp) => (true, Some(resp.status())),
+                Ok(resp) => {
+                    let code = resp.status();
+                    (!is_dead_status(code), Some(code))
+                }
                 Err(ureq::Error::Status(code, _)) => {
-                    // 有响应但非 2xx，说明站点可达（只是返回了错误码）
-                    // 4xx/5xx 不一定是「已失效」，但 >= 400 可作为参考
-                    (code < 500, Some(code))
+                    // 有响应但非 2xx
+                    (!is_dead_status(code), Some(code))
                 }
                 Err(_) => {
                     // 连接超时 / DNS 失败等 → 尝试 http 回退
                     let url_http = url.replace("https://", "http://");
                     match agent.head(&url_http).call() {
-                        Ok(resp) => (true, Some(resp.status())),
-                        Err(ureq::Error::Status(code, _)) => (code < 500, Some(code)),
+                        Ok(resp) => {
+                            let code = resp.status();
+                            (!is_dead_status(code), Some(code))
+                        }
+                        Err(ureq::Error::Status(code, _)) => (!is_dead_status(code), Some(code)),
                         Err(_) => (false, None),
                     }
                 }

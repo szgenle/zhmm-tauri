@@ -614,7 +614,6 @@ const collapsed = ref(false);
   min-height: 0;
   height: 100%;
   transition: width 0.25s ease, min-width 0.25s ease, background 0.3s ease;
-  backdrop-filter: blur(8px);
 }
 .tag-sidebar.collapsed {
   width: 36px;
@@ -806,7 +805,7 @@ const collapsed = ref(false);
 }
 
 /* 深色主题适配 */
-:global(html[data-theme="dark"]) .tree-item:hover {
+:global(html[data-theme="dark"] .tree-item:hover) {
   background: rgba(255, 255, 255, 0.06);
 }
 </style>

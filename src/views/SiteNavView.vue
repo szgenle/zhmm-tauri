@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { SearchOutline } from "@vicons/ionicons5";
+import { SearchOutline, PulseOutline } from "@vicons/ionicons5";
 import { useMessage } from "naive-ui";
-import { api, type PasswordEntry, type PasswordSummary, type SiteSuggestion } from "../api";
+import { api, type PasswordEntry, type PasswordSummary, type SiteSuggestion, type UrlHealthResult } from "../api";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import PasswordEditDialog from "../components/PasswordEditDialog.vue";
 import TagSidebar, {
@@ -106,6 +106,10 @@ const entriesWithUrl = computed(() =>
 const filteredEntries = computed(() => {
   let result = entriesWithUrl.value;
   const primarySet = new Set(primaryTags.value);
+  // 隐藏已失效条目（除非选中的标签正好是"已失效"）
+  if (hideDeadEntries.value && selectedTag.value !== DEAD_TAG) {
+    result = result.filter((e) => !(e.tags || []).includes(DEAD_TAG));
+  }
   // 标签筛选
   if (selectedTag.value === UNCATEGORIZED_TAG) {
     // 「未分类」：用户已配置一级标签时，指 tags 不含任何一级标签的条目；
@@ -389,6 +393,88 @@ async function handleEdit(entry: PasswordSummary, event: MouseEvent) {
   }
 }
 
+// ========== 链接健康检测 ==========
+const DEAD_TAG = "已失效";
+/** 是否隐藏已失效条目（默认隐藏） */
+const hideDeadEntries = ref(
+  localStorage.getItem("ajot_hide_dead_sites") !== "false"
+);
+watch(hideDeadEntries, (v) => localStorage.setItem("ajot_hide_dead_sites", v ? "true" : "false"));
+
+/** 检测进度 */
+const checking = ref(false);
+const checkProgress = ref(0);
+const checkTotal = ref(0);
+/** 不可达的 URL 集合（本次检测结果） */
+const deadUrls = ref<Set<string>>(new Set());
+/** 是否有检测结果待处理 */
+const hasCheckResult = ref(false);
+
+/** 批量检测当前筛选出的条目链接可达性 */
+async function handleCheckHealth() {
+  const entries = filteredEntries.value;
+  if (entries.length === 0) {
+    message.info("当前无可检测的条目");
+    return;
+  }
+  checking.value = true;
+  checkProgress.value = 0;
+  checkTotal.value = entries.length;
+  deadUrls.value = new Set();
+  hasCheckResult.value = false;
+
+  // 分批检测，每批最多 10 条
+  const BATCH = 10;
+  const urls = entries.map((e) => e.url);
+  for (let i = 0; i < urls.length; i += BATCH) {
+    const batch = urls.slice(i, i + BATCH);
+    try {
+      const results: UrlHealthResult[] = await api.checkUrlHealth(batch);
+      for (const r of results) {
+        if (!r.reachable) {
+          deadUrls.value.add(r.url);
+        }
+      }
+    } catch (e: any) {
+      message.error(`检测失败: ${e}`);
+    }
+    checkProgress.value = Math.min(i + BATCH, urls.length);
+  }
+  checking.value = false;
+  hasCheckResult.value = true;
+  if (deadUrls.value.size === 0) {
+    message.success("所有链接均可访问");
+  } else {
+    message.warning(`发现 ${deadUrls.value.size} 个不可达链接`);
+  }
+}
+
+/** 将不可达条目批量标记为"已失效" */
+async function handleBatchMarkDead() {
+  const deadEntryIds = filteredEntries.value
+    .filter((e) => deadUrls.value.has(e.url))
+    .filter((e) => !(e.tags || []).includes(DEAD_TAG))
+    .map((e) => e.id);
+  if (deadEntryIds.length === 0) {
+    message.info("所有不可达条目已标记或无需标记");
+    hasCheckResult.value = false;
+    return;
+  }
+  try {
+    const count = await api.batchAddTag(deadEntryIds, DEAD_TAG);
+    message.success(`已为 ${count} 条记录添加「${DEAD_TAG}」标签`);
+    hasCheckResult.value = false;
+    deadUrls.value = new Set();
+    await loadData();
+  } catch (e: any) {
+    message.error(`标记失败: ${e}`);
+  }
+}
+
+/** 判断条目是否不可达（用于 UI 高亮） */
+function isEntryDead(entry: PasswordSummary): boolean {
+  return deadUrls.value.has(entry.url);
+}
 
 
 onMounted(loadData);
@@ -423,6 +509,26 @@ onMounted(loadData);
               <n-icon :component="SearchOutline" />
             </template>
           </n-input>
+          <n-checkbox v-model:checked="hideDeadEntries" size="small">
+            隐藏已失效
+          </n-checkbox>
+          <n-button
+            size="small"
+            :loading="checking"
+            :disabled="checking"
+            @click="handleCheckHealth"
+          >
+            <template #icon><n-icon :component="PulseOutline" /></template>
+            {{ checking ? `检测中 ${checkProgress}/${checkTotal}` : '检测链接' }}
+          </n-button>
+          <n-button
+            v-if="hasCheckResult && deadUrls.size > 0"
+            size="small"
+            type="warning"
+            @click="handleBatchMarkDead"
+          >
+            标记 {{ deadUrls.size }} 个为「已失效」
+          </n-button>
         </div>
 
         <!-- 空状态 -->
@@ -457,6 +563,7 @@ onMounted(loadData);
                   v-for="entry in sub.entries"
                   :key="entry.id"
                   class="site-card"
+                  :class="{ 'site-card--dead': isEntryDead(entry) }"
                   @click="handleOpen(entry)"
                   @contextmenu="handleEdit(entry, $event)"
                 >
@@ -575,7 +682,6 @@ onMounted(loadData);
   background: var(--app-card-bg, #ffffff);
   border: 1px solid var(--app-border-color, rgba(0, 0, 0, 0.06));
   box-shadow: var(--app-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.04));
-  backdrop-filter: blur(8px);
   contain: layout style;
 }
 
@@ -619,6 +725,7 @@ onMounted(loadData);
 .card-name {
   font-size: 12px;
   font-weight: 500;
+  color: inherit;
   text-align: center;
   max-width: 90px;
   overflow: hidden;
@@ -628,8 +735,8 @@ onMounted(loadData);
 
 .card-user {
   font-size: 10px;
-  color: var(--n-text-color-2, #666);
-  opacity: 0.75;
+  color: inherit;
+  opacity: 0.55;
   max-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -639,22 +746,43 @@ onMounted(loadData);
 /* ========== 深色主题：降低卡片视觉密度 ==========
    卡片数量大时，深色背景下的边框/阴影会显得拥挤；
    故采用「幽灵卡」策略：默认透明，仅 hover 时浮现轻量容器。 */
-:global(html[data-theme="dark"]) .site-card {
+:global(html[data-theme="dark"] .site-card) {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
-  backdrop-filter: none;
 }
 
-:global(html[data-theme="dark"]) .site-card:hover {
+:global(html[data-theme="dark"] .site-card:hover) {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.06);
   box-shadow: none;
 }
 
 /* favicon 兜底字符在深色下保留弱底，避免「裸字」 */
-:global(html[data-theme="dark"]) .favicon-fallback {
+:global(html[data-theme="dark"] .favicon-fallback) {
   background: rgba(255, 255, 255, 0.06);
   color: var(--n-text-color, rgba(255, 255, 255, 0.85));
+}
+
+/* ========== 不可达卡片高亮 ========== */
+.site-card--dead {
+  border-color: rgba(255, 77, 79, 0.5);
+  opacity: 0.6;
+  position: relative;
+}
+
+.site-card--dead::after {
+  content: "✕";
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 10px;
+  color: #ff4d4f;
+  font-weight: 700;
+}
+
+:global(html[data-theme="dark"] .site-card--dead) {
+  border-color: rgba(255, 77, 79, 0.4);
+  opacity: 0.5;
 }
 </style>

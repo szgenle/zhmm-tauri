@@ -139,7 +139,6 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
 .n-card {
   box-shadow: var(--app-shadow-sm) !important;
   border: 1px solid var(--app-card-border) !important;
-  backdrop-filter: blur(8px);
   transition: box-shadow 0.25s ease, transform 0.25s ease;
 }
 
@@ -183,7 +182,6 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
   border: 1px solid var(--app-card-border);
   border-radius: 12px;
   box-shadow: var(--app-shadow-sm);
-  backdrop-filter: blur(8px);
   transition: box-shadow 0.25s ease, transform 0.25s ease;
 }
 
