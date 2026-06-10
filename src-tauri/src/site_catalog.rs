@@ -42,8 +42,8 @@ impl SiteSuggestion {
     }
 }
 
-/// 内嵌的 JSON 数据
-const CATALOG_JSON: &str = include_str!("../../resources/site_catalog.json");
+/// 内嵌的 JSON 数据（复用 catalogs.next/sites.json 站点全集，唯一事实源）
+const CATALOG_JSON: &str = include_str!("../../resources/catalogs.next/sites.json");
 
 /// 缓存的内置词典（只读）
 struct CatalogData {
@@ -95,29 +95,42 @@ pub struct UserCatalogState {
     path: PathBuf,
     /// 用户自定义条目（host -> CatalogItem）
     data: RwLock<HashMap<String, CatalogItem>>,
+    /// 用户选择的一级标签集合（来自 _meta.primary_tags）
+    primary_tags: RwLock<Vec<String>>,
 }
 
 impl UserCatalogState {
     pub fn new(path: PathBuf) -> Self {
-        let data = Self::load_from_file(&path);
+        let (data, primary_tags) = Self::load_from_file(&path);
         Self {
             path,
             data: RwLock::new(data),
+            primary_tags: RwLock::new(primary_tags),
         }
     }
 
-    fn load_from_file(path: &PathBuf) -> HashMap<String, CatalogItem> {
+    fn load_from_file(path: &PathBuf) -> (HashMap<String, CatalogItem>, Vec<String>) {
         if !path.exists() {
-            return HashMap::new();
+            return (HashMap::new(), Vec::new());
         }
         let Ok(bytes) = fs::read(path) else {
-            return HashMap::new();
+            return (HashMap::new(), Vec::new());
         };
         let Ok(raw) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-            return HashMap::new();
+            return (HashMap::new(), Vec::new());
         };
+        let primary_tags: Vec<String> = raw
+            .get("_meta")
+            .and_then(|m| m.get("primary_tags"))
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
         let catalog = parse_catalog_json(&raw.to_string());
-        catalog.sites
+        (catalog.sites, primary_tags)
     }
 
     fn persist(&self) -> AppResult<()> {
@@ -125,12 +138,16 @@ impl UserCatalogState {
             fs::create_dir_all(parent)?;
         }
         let data = self.data.read();
-        let json = Self::to_catalog_json(&data)?;
+        let primary_tags = self.primary_tags.read();
+        let json = Self::to_catalog_json(&data, &primary_tags)?;
         fs::write(&self.path, json)?;
         Ok(())
     }
 
-    fn to_catalog_json(data: &HashMap<String, CatalogItem>) -> AppResult<Vec<u8>> {
+    fn to_catalog_json(
+        data: &HashMap<String, CatalogItem>,
+        primary_tags: &[String],
+    ) -> AppResult<Vec<u8>> {
         let mut sites = serde_json::Map::new();
         let mut hosts: Vec<&String> = data.keys().collect();
         hosts.sort();
@@ -149,13 +166,22 @@ impl UserCatalogState {
         }
         let mut root = serde_json::Map::new();
         let mut meta = serde_json::Map::new();
-        meta.insert("version".into(), serde_json::Value::Number(2.into()));
+        meta.insert("version".into(), serde_json::Value::Number(3.into()));
         meta.insert(
             "description".into(),
             serde_json::Value::String("用户自定义网站词典".into()),
         );
         let now = chrono::Local::now().format("%Y-%m").to_string();
         meta.insert("updated".into(), serde_json::Value::String(now));
+        meta.insert(
+            "primary_tags".into(),
+            serde_json::Value::Array(
+                primary_tags
+                    .iter()
+                    .map(|t| serde_json::Value::String(t.clone()))
+                    .collect(),
+            ),
+        );
         root.insert("_meta".into(), serde_json::Value::Object(meta));
         root.insert("sites".into(), serde_json::Value::Object(sites));
         let bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(root))?;
@@ -164,7 +190,24 @@ impl UserCatalogState {
 
     /// 是否有用户自定义数据
     pub fn has_user_data(&self) -> bool {
-        !self.data.read().is_empty()
+        !self.data.read().is_empty() || !self.primary_tags.read().is_empty()
+    }
+
+    /// 获取用户选择的一级标签集合
+    pub fn get_primary_tags(&self) -> Vec<String> {
+        self.primary_tags.read().clone()
+    }
+
+    /// 设置用户选择的一级标签集合（去重、过滤空字符串、保持调用方传入顺序）
+    pub fn set_primary_tags(&self, tags: Vec<String>) -> AppResult<()> {
+        let mut seen = std::collections::HashSet::new();
+        let cleaned: Vec<String> = tags
+            .into_iter()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty() && seen.insert(t.clone()))
+            .collect();
+        *self.primary_tags.write() = cleaned;
+        self.persist()
     }
 }
 
@@ -279,16 +322,62 @@ pub fn all_tags(user_state: &UserCatalogState) -> Vec<String> {
 /// 导出合并后的完整词典到指定路径，同时补充密码库中尚未收录的站点
 /// `filter_tags` 为空时导出全部；非空时只导出含有任一指定标签的条目
 /// `exclude_tags` 非空时排除含有任一指定标签的条目（对词典条目和密码库补充条目均生效）
+/// `vault_override` 为 true 时：对密库中已存在的 host，用密库 tags 覆盖词典原 tags
+///                  （name 保留词典原值；密库 tags 为空则不覆盖，避免清空已有标签）
+/// `scope` 取值：
+///   - "all"    ：导出全部（默认行为，包含密库未收录补充）
+///   - "used"   ：仅导出密库中已使用的 host（词典中存在 + 密库补充均算"已用"）
+///   - "unused" ：仅导出密库中未使用的 host（词典里有但密库未录入；不补充密库 host）
 pub fn export_catalog(
     user_state: &UserCatalogState,
     dest: &str,
     vault_hosts: &[(String, Vec<String>)],
     filter_tags: &[String],
     exclude_tags: &[String],
+    vault_override: bool,
+    scope: &str,
 ) -> AppResult<usize> {
     let entries = all_entries_merged(user_state);
 
-    // 如果指定了 include 标签筛选，只保留含有任一标签的条目
+    // 构建密库 host → tags 索引（host 已小写）
+    let vault_map: std::collections::HashMap<String, Vec<String>> = vault_hosts
+        .iter()
+        .map(|(h, tags)| (h.trim().to_lowercase(), tags.clone()))
+        .filter(|(h, _)| !h.is_empty())
+        .collect();
+
+    // 当开启 vault_override 时，先用密库 tags 覆盖同 host 词典条目的 tags
+    let entries: Vec<SiteCatalogEntry> = if vault_override {
+        entries
+            .into_iter()
+            .map(|mut e| {
+                if let Some(vt) = vault_map.get(&e.host) {
+                    if !vt.is_empty() {
+                        e.tags = vt.clone();
+                    }
+                }
+                e
+            })
+            .collect()
+    } else {
+        entries
+    };
+
+    // 范围筛选（在 include/exclude 之前作用于词典条目）
+    let scope_norm = scope.trim().to_lowercase();
+    let entries: Vec<SiteCatalogEntry> = match scope_norm.as_str() {
+        "used" => entries
+            .into_iter()
+            .filter(|e| vault_map.contains_key(&e.host))
+            .collect(),
+        "unused" => entries
+            .into_iter()
+            .filter(|e| !vault_map.contains_key(&e.host))
+            .collect(),
+        _ => entries, // "all" 或未识别值 → 不过滤
+    };
+
+    // 如果指定了 include 标签筛选，只保留含有任一标签的条目（在覆盖之后生效）
     let entries: Vec<SiteCatalogEntry> = if filter_tags.is_empty() {
         entries
     } else {
@@ -304,9 +393,12 @@ pub fn export_catalog(
     let existing: std::collections::HashSet<String> =
         entries.iter().map(|e| e.host.clone()).collect();
 
-    // 从密码库补充尚未收录的 host（带标签，仅在未指定 include 筛选时补充）
+    // 从密码库补充尚未收录的 host（带标签）
+    // 规则：仅在 "all" 或 "used" 范围、且未指定 include 筛选时补充；
+    //      "unused" 范围下补充的都是已用 host，与语义冲突，故不补充。
     let mut all = entries;
-    if filter_tags.is_empty() {
+    let allow_supplement = filter_tags.is_empty() && scope_norm.as_str() != "unused";
+    if allow_supplement {
         for (host, tags) in vault_hosts {
             let h = host.trim().to_lowercase();
             if !h.is_empty() && !existing.contains(&h) {
@@ -399,11 +491,263 @@ pub fn import_catalog(user_state: &UserCatalogState, src: &str) -> AppResult<usi
 /// 重置用户词典（清空用户层，恢复为纯内置）
 pub fn reset_user_catalog(user_state: &UserCatalogState) -> AppResult<()> {
     user_state.data.write().clear();
+    user_state.primary_tags.write().clear();
     // 删除用户词典文件
     if user_state.path.exists() {
         fs::remove_file(&user_state.path)?;
     }
     Ok(())
+}
+
+// ========== 预制身份词典（resources/catalogs.next/，编译进二进制） ==========
+//
+// 数据布局（与旧 catalogs/<persona>.json 不同）：
+// - sites.json：站点全集，唯一事实源（与身份解耦，每个 site 的 tags 中已注入身份标签）
+// - personas/<id>.json：每个身份只保留 _meta（含 primary_tags），不再包含 sites 子集
+//
+// 用户选定 persona 时，导入行为为：
+// - 把 sites.json 全集合并进用户词典（按 override_tags 三态归类：added/overwritten/kept）
+// - 把对应 persona 的 primary_tags 追加到用户 primary_tags（去重，保留用户已有顺序）
+
+const PRESET_SITES_JSON: &str = include_str!("../../resources/catalogs.next/sites.json");
+
+const PRESET_PERSONA_BASE_JSON: &str =
+    include_str!("../../resources/catalogs.next/personas/base.json");
+const PRESET_PERSONA_DEVELOPER_JSON: &str =
+    include_str!("../../resources/catalogs.next/personas/developer.json");
+const PRESET_PERSONA_GAME_DEV_JSON: &str =
+    include_str!("../../resources/catalogs.next/personas/game-dev.json");
+const PRESET_PERSONA_CREATOR_JSON: &str =
+    include_str!("../../resources/catalogs.next/personas/creator.json");
+const PRESET_PERSONA_SMALL_BIZ_JSON: &str =
+    include_str!("../../resources/catalogs.next/personas/small-biz.json");
+const PRESET_PERSONA_CROSS_BORDER_JSON: &str =
+    include_str!("../../resources/catalogs.next/personas/cross-border.json");
+
+/// 单份 persona 的元信息（不含 sites 子集——sites 是全集，与身份解耦）
+struct PresetPersona {
+    id: String,
+    description: String,
+    primary_tags: Vec<String>,
+    community: bool,
+    default_enabled: bool,
+}
+
+/// 给前端的预制身份元信息
+///
+/// 字段命名沿用旧版 `persona`（而非 `id`）保持前端兼容；
+/// `site_count` 对所有 persona 取同一值——sites.json 全集大小。
+#[derive(Debug, Clone, Serialize)]
+pub struct PresetPersonaInfo {
+    pub persona: String,
+    pub description: String,
+    pub site_count: usize,
+    pub primary_tags: Vec<String>,
+    pub community: bool,
+    pub default_enabled: bool,
+}
+
+/// 导入预制词典后的统计结果
+#[derive(Debug, Clone, Serialize)]
+pub struct PresetImportResult {
+    /// host 不存在 → 新增
+    pub added: usize,
+    /// host 已存在且 override_tags=true → 用预制覆盖
+    pub overwritten: usize,
+    /// host 已存在且 override_tags=false → 保留用户当前数据
+    pub kept: usize,
+}
+
+/// 站点全集（解析自 sites.json）
+static PRESET_SITES_NEXT: LazyLock<HashMap<String, CatalogItem>> =
+    LazyLock::new(|| parse_catalog_json(PRESET_SITES_JSON).sites);
+
+/// 全部 persona 元信息（解析自 personas/*.json），顺序与 PERSONA_FILES 对应
+static PRESET_PERSONAS_NEXT: LazyLock<Vec<PresetPersona>> = LazyLock::new(|| {
+    let raws = [
+        PRESET_PERSONA_BASE_JSON,
+        PRESET_PERSONA_DEVELOPER_JSON,
+        PRESET_PERSONA_GAME_DEV_JSON,
+        PRESET_PERSONA_CREATOR_JSON,
+        PRESET_PERSONA_SMALL_BIZ_JSON,
+        PRESET_PERSONA_CROSS_BORDER_JSON,
+    ];
+    raws.iter().filter_map(|json| parse_preset_persona(json)).collect()
+});
+
+fn parse_preset_persona(json: &str) -> Option<PresetPersona> {
+    let raw: serde_json::Value = serde_json::from_str(json).ok()?;
+    let meta = raw.get("_meta")?.as_object()?;
+    let id = meta.get("id")?.as_str()?.to_string();
+    let description = meta
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let primary_tags: Vec<String> = meta
+        .get("primary_tags")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let community = meta
+        .get("community")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    // 社区词典默认 default_enabled=false；其它默认 true
+    let default_enabled = meta
+        .get("default_enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(!community);
+
+    Some(PresetPersona {
+        id,
+        description,
+        primary_tags,
+        community,
+        default_enabled,
+    })
+}
+
+/// 列出全部预制身份的元信息
+pub fn list_preset_personas() -> Vec<PresetPersonaInfo> {
+    let total_sites = PRESET_SITES_NEXT.len();
+    PRESET_PERSONAS_NEXT
+        .iter()
+        .map(|p| PresetPersonaInfo {
+            persona: p.id.clone(),
+            description: p.description.clone(),
+            site_count: total_sites,
+            primary_tags: p.primary_tags.clone(),
+            community: p.community,
+            default_enabled: p.default_enabled,
+        })
+        .collect()
+}
+
+/// 把指定 persona 对应的「站点全集 + primary_tags」并入用户词典层。
+///
+/// 站点合并三态（基于「内置 + 用户层」合并视图判断 host 是否已存在）：
+/// - host 不存在 → 写入用户层（added）
+/// - host 已存在 && override_tags=true → 用预制 name+tags 覆盖（overwritten）
+/// - host 已存在 && override_tags=false → 保留用户当前数据不动（kept）
+///
+/// 一级标签：persona 的 primary_tags 追加到用户 primary_tags（去重，保留用户已有顺序）
+pub fn import_preset_persona(
+    user_state: &UserCatalogState,
+    persona_id: &str,
+    override_tags: bool,
+) -> AppResult<PresetImportResult> {
+    let persona = PRESET_PERSONAS_NEXT
+        .iter()
+        .find(|p| p.id == persona_id)
+        .ok_or_else(|| AppError::Other(format!("未找到预制身份: {persona_id}")))?;
+
+    let builtin_hosts: std::collections::HashSet<&str> =
+        BUILTIN_CATALOG.sites.keys().map(|s| s.as_str()).collect();
+
+    let mut added = 0usize;
+    let mut overwritten = 0usize;
+    let mut kept = 0usize;
+
+    {
+        let mut user_data = user_state.data.write();
+        for (host, item) in PRESET_SITES_NEXT.iter() {
+            let exists_in_user = user_data.contains_key(host);
+            let exists_in_builtin = builtin_hosts.contains(host.as_str());
+            let exists = exists_in_user || exists_in_builtin;
+
+            if !exists {
+                user_data.insert(host.clone(), item.clone());
+                added += 1;
+            } else if override_tags {
+                user_data.insert(host.clone(), item.clone());
+                overwritten += 1;
+            } else {
+                kept += 1;
+            }
+        }
+    }
+
+    // 合并 persona 的 primary_tags（追加去重，保留用户已有顺序）
+    {
+        let mut pt = user_state.primary_tags.write();
+        let mut seen: std::collections::HashSet<String> = pt.iter().cloned().collect();
+        for t in &persona.primary_tags {
+            if seen.insert(t.clone()) {
+                pt.push(t.clone());
+            }
+        }
+    }
+
+    user_state.persist()?;
+
+    Ok(PresetImportResult {
+        added,
+        overwritten,
+        kept,
+    })
+}
+
+/// 兼容旧接口：转发到 `import_preset_persona`。
+///
+/// 旧签名 `(persona, override_tags)`，行为现等价于新版「全集导入 + persona primary_tags 注入」。
+/// 保留一段时间以兼容尚未升级的前端调用方，新代码请使用 `import_preset_persona`。
+#[deprecated(note = "请使用 import_preset_persona")]
+pub fn import_preset_catalog(
+    user_state: &UserCatalogState,
+    persona: &str,
+    override_tags: bool,
+) -> AppResult<PresetImportResult> {
+    import_preset_persona(user_state, persona, override_tags)
+}
+
+// ========== 标签统计与一级标签管理 ==========
+
+/// 单个标签的统计信息（合并 builtin + 用户词典）
+#[derive(Debug, Clone, Serialize)]
+pub struct CatalogTagStat {
+    pub tag: String,
+    pub count: usize,
+    pub is_primary: bool,
+}
+
+/// 列出合并视图（builtin + user）中所有出现过的标签 + 频次 + 是否一级
+pub fn list_tag_stats(user_state: &UserCatalogState) -> Vec<CatalogTagStat> {
+    let entries = all_entries_merged(user_state);
+    let primary: std::collections::HashSet<String> =
+        user_state.get_primary_tags().into_iter().collect();
+
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for e in &entries {
+        for t in &e.tags {
+            let trimmed = t.trim().to_string();
+            if trimmed.is_empty() {
+                continue;
+            }
+            *counts.entry(trimmed).or_insert(0) += 1;
+        }
+    }
+
+    let mut result: Vec<CatalogTagStat> = counts
+        .into_iter()
+        .map(|(tag, count)| CatalogTagStat {
+            is_primary: primary.contains(&tag),
+            tag,
+            count,
+        })
+        .collect();
+    // 排序：一级在前，频次降序，再按标签字典序
+    result.sort_by(|a, b| {
+        b.is_primary
+            .cmp(&a.is_primary)
+            .then(b.count.cmp(&a.count))
+            .then(a.tag.cmp(&b.tag))
+    });
+    result
 }
 
 // ========== 兼容旧接口（不依赖 state 的只读内置查询） ==========

@@ -28,17 +28,29 @@ pub fn suggest_site(
 /// 同时会自动补充密码库中已录入但词典未收录的站点（空名/空标签，供外部分类）
 /// `filter_tags` 为空时导出全部；非空时只导出含有指定标签的条目
 /// `exclude_tags` 非空时排除含有指定标签的条目
+/// `vault_override` 为 true 时：对密库中已存在的 host，用密库当前 tags 覆盖词典 tags
+/// `scope` 取值："all" / "used" / "unused"，分别表示全部、仅密库已用、仅密库未用
 #[tauri::command]
 pub fn export_site_catalog(
     path: String,
     filter_tags: Vec<String>,
     exclude_tags: Vec<String>,
+    vault_override: bool,
+    scope: String,
     user_catalog: State<'_, site_catalog::UserCatalogState>,
     vault: State<'_, VaultState>,
 ) -> AppResult<usize> {
     // 尝试从密码库收集 hosts（未解锁时跳过，不影响导出）
     let vault_hosts = vault.collect_url_hosts().unwrap_or_default();
-    site_catalog::export_catalog(&user_catalog, &path, &vault_hosts, &filter_tags, &exclude_tags)
+    site_catalog::export_catalog(
+        &user_catalog,
+        &path,
+        &vault_hosts,
+        &filter_tags,
+        &exclude_tags,
+        vault_override,
+        &scope,
+    )
 }
 
 /// 列出所有可用标签（词典标签 + 密码库中用户自定义标签，去重、排序）
@@ -82,6 +94,67 @@ pub fn has_user_catalog(
     user_catalog: State<'_, site_catalog::UserCatalogState>,
 ) -> bool {
     user_catalog.has_user_data()
+}
+
+/// 列出所有预制身份词典（base / developer / game-dev / cross-border / creator / small-biz / crypto）
+#[tauri::command]
+pub fn list_preset_personas() -> Vec<site_catalog::PresetPersonaInfo> {
+    site_catalog::list_preset_personas()
+}
+
+/// 把指定预制身份的「站点全集 + primary_tags」合并到用户词典层。
+///
+/// - `persona_id`：预制身份标识（base / developer / game-dev / creator / small-biz / cross-border）
+/// - `override_tags`：同 host 已存在时是否用预制 name+tags 覆盖（默认 false 保留用户数据）
+///
+/// 行为：
+/// - 把 sites.json 全集合并进用户词典（按 override_tags 三态归类）
+/// - 把 persona 的 primary_tags 追加到用户 primary_tags（去重，保留用户已有顺序）
+///
+/// 返回 added / overwritten / kept 三态计数。
+#[tauri::command]
+pub fn import_preset_persona(
+    persona_id: String,
+    override_tags: bool,
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+) -> AppResult<site_catalog::PresetImportResult> {
+    site_catalog::import_preset_persona(&user_catalog, &persona_id, override_tags)
+}
+
+/// 兼容旧接口：行为等价于 `import_preset_persona`，保留一段时间以兼容旧前端。
+#[tauri::command]
+pub fn import_preset_catalog(
+    persona: String,
+    override_tags: bool,
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+) -> AppResult<site_catalog::PresetImportResult> {
+    #[allow(deprecated)]
+    site_catalog::import_preset_catalog(&user_catalog, &persona, override_tags)
+}
+
+/// 列出合并视图中全部标签 + 频次 + 是否为用户选定的一级标签
+#[tauri::command]
+pub fn list_catalog_tag_stats(
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+) -> Vec<site_catalog::CatalogTagStat> {
+    site_catalog::list_tag_stats(&user_catalog)
+}
+
+/// 获取用户选择的一级标签集合
+#[tauri::command]
+pub fn get_user_primary_tags(
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+) -> Vec<String> {
+    user_catalog.get_primary_tags()
+}
+
+/// 设置用户选择的一级标签集合（去重、过滤空字符串）
+#[tauri::command]
+pub fn set_user_primary_tags(
+    tags: Vec<String>,
+    user_catalog: State<'_, site_catalog::UserCatalogState>,
+) -> AppResult<()> {
+    user_catalog.set_primary_tags(tags)
 }
 
 // ========== 主密码管理 ==========

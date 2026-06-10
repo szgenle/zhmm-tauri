@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "version": 3,
+    "id": "game-dev",
+    "name": "游戏开发",
+    "description": "游戏开发者预制词典：tags 数组顺序无关，一级标签由 _meta.primary_tags 显式声明。本词典只贡献「游戏开发」一个一级 chip，引擎/分发/素材/广告变现/SDK/小游戏/版号/设计 等全部作为子标签存在。",
+    "primary_tags": [
+      "游戏开发"
+    ],
+    "updated": "2026-06-09"
+  }
+}

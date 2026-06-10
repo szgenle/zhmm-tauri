@@ -21,22 +21,41 @@ export function primaryOfOtherSub(sentinel: string): string {
   return sentinel.slice(OTHER_SUB_PREFIX.length);
 }
 
-/** 计算每个一级标签下「频次 ≥ 阈值」的可见二级标签集合 */
+/** 计算每个一级标签下「频次 ≥ 阈值」的可见二级标签集合
+ *
+ * - 当传入 primarySet 时：以「条目 tags ∩ primarySet」决定该条目归属的一级标签，
+ *   除该一级外的其它 tags 作为子标签候选；一个条目可同时归属多个一级。
+ * - 未传入 primarySet 时：退化为旧行为（tags[0] 作为一级，tags[1:] 作为子标签）。
+ */
 export function computeVisibleChildrenMap(
   entries: PasswordSummary[],
   threshold: number = CHILD_MIN_COUNT,
+  primarySet?: Set<string>,
 ): Map<string, Set<string>> {
   const counter = new Map<string, Map<string, number>>();
+  const useConfig = !!primarySet && primarySet.size > 0;
   for (const entry of entries) {
     const tags = (entry.tags || []).filter((t) => !!t);
     if (tags.length < 2) continue;
-    const primary = tags[0];
-    if (!counter.has(primary)) counter.set(primary, new Map());
-    const cm = counter.get(primary)!;
-    for (let i = 1; i < tags.length; i++) {
-      const c = tags[i];
-      if (!c) continue;
-      cm.set(c, (cm.get(c) || 0) + 1);
+    if (useConfig) {
+      const myPrimaries = tags.filter((t) => primarySet!.has(t));
+      for (const primary of myPrimaries) {
+        if (!counter.has(primary)) counter.set(primary, new Map());
+        const cm = counter.get(primary)!;
+        for (const t of tags) {
+          if (!t || t === primary) continue;
+          cm.set(t, (cm.get(t) || 0) + 1);
+        }
+      }
+    } else {
+      const primary = tags[0];
+      if (!counter.has(primary)) counter.set(primary, new Map());
+      const cm = counter.get(primary)!;
+      for (let i = 1; i < tags.length; i++) {
+        const c = tags[i];
+        if (!c) continue;
+        cm.set(c, (cm.get(c) || 0) + 1);
+      }
     }
   }
   const result = new Map<string, Set<string>>();
@@ -50,20 +69,32 @@ export function computeVisibleChildrenMap(
   return result;
 }
 
-/** 判断条目是否属于某「其它」虚拟子标签：tags[0]=primary 且无任一 tags[1:] 命中可见子标签集 */
+/** 判断条目是否属于某「其它」虚拟子标签
+ *
+ * - 当传入 primarySet 时：tags 含 primary，且条目其它 tags 均不在 visibleSet
+ * - 未传入 primarySet 时：tags[0]=primary 且 tags[1:] 均不在 visibleSet
+ */
 export function entryMatchesOtherSub(
   entry: PasswordSummary,
   sentinel: string,
   visibleMap: Map<string, Set<string>>,
+  primarySet?: Set<string>,
 ): boolean {
   if (!isOtherSubSentinel(sentinel)) return false;
   const primary = primaryOfOtherSub(sentinel);
   const tags = (entry.tags || []).filter((t) => !!t);
-  if (tags.length === 0 || tags[0] !== primary) return false;
+  if (tags.length === 0) return false;
+  const useConfig = !!primarySet && primarySet.size > 0;
+  if (useConfig) {
+    if (!tags.includes(primary)) return false;
+  } else {
+    if (tags[0] !== primary) return false;
+  }
   const visible = visibleMap.get(primary);
-  if (!visible || visible.size === 0) return true; // primary 下没有任何可见子标签 → 条目都属于「其它」
-  for (let i = 1; i < tags.length; i++) {
-    if (visible.has(tags[i])) return false;
+  if (!visible || visible.size === 0) return true;
+  for (const t of tags) {
+    if (t === primary) continue;
+    if (visible.has(t)) return false;
   }
   return true;
 }
@@ -89,9 +120,12 @@ const props = withDefaults(defineProps<{
   sortMode?: "frequency" | "recent";
   /** sortMode='recent' 时用于持久化最近使用顺序的 localStorage key */
   recentTagsKey?: string;
+  /** 用户在「标签词典」勾选的一级标签集合；非空时按交集分级，空则退化为按 tags[0] 分级 */
+  primaryTags?: string[];
 }>(), {
   mode: "single",
   sortMode: "frequency",
+  primaryTags: () => [],
 });
 
 const emit = defineEmits<{
@@ -160,12 +194,15 @@ function toggleExpand(tag: string) {
 }
 
 const tagTree = computed<{ nodes: TagNode[]; uncategorizedCount: number }>(() => {
-  // 统计一级标签(tags[0])计数
+  // 用户在「标签词典」勾选的一级标签集合；非空时按集合分级，空则退化为按 tags[0]
+  const primarySet = new Set(props.primaryTags || []);
+  const useConfig = primarySet.size > 0;
+
+  // 一级标签条目计数
   const primaryCounter = new Map<string, number>();
-  // 统计每个一级标签下的子标签(tags[1:])计数
+  // 每个一级标签下的子标签条目计数
   const childrenCounter = new Map<string, Map<string, number>>();
-  // 每个一级标签下「其它」虚拟子标签的条目计数
-  // 规则：tags[0]=primary 且其 tags[1:] 没有任何一项命中可见子标签集（含完全没有 tags[1:] 的情况）
+  // 没有命中任何一级标签的条目数（含 tags 为空、tags 完全不与 primarySet 相交）
   let uncategorizedCount = 0;
 
   for (const entry of props.entries) {
@@ -174,18 +211,28 @@ const tagTree = computed<{ nodes: TagNode[]; uncategorizedCount: number }>(() =>
       uncategorizedCount += 1;
       continue;
     }
-    const primary = tags[0];
-    primaryCounter.set(primary, (primaryCounter.get(primary) || 0) + 1);
-
-    // 收集子标签
-    for (let i = 1; i < tags.length; i++) {
-      const child = tags[i];
-      if (!child) continue;
-      if (!childrenCounter.has(primary)) {
-        childrenCounter.set(primary, new Map());
+    if (useConfig) {
+      const myPrimaries = tags.filter((t) => primarySet.has(t));
+      if (myPrimaries.length === 0) {
+        uncategorizedCount += 1;
+        continue;
       }
-      const cm = childrenCounter.get(primary)!;
-      cm.set(child, (cm.get(child) || 0) + 1);
+      // 一个条目可同时归属多个一级 chip，每个 chip 都计 +1
+      for (const primary of myPrimaries) {
+        primaryCounter.set(primary, (primaryCounter.get(primary) || 0) + 1);
+        if (!childrenCounter.has(primary)) childrenCounter.set(primary, new Map());
+        const cm = childrenCounter.get(primary)!;
+        for (const t of tags) {
+          if (!t || t === primary) continue;
+          cm.set(t, (cm.get(t) || 0) + 1);
+        }
+      }
+    } else {
+      // 未配置一级标签：不分级，所有出现过的 tag 平铺为独立 chip（无 children）
+      // 一个条目的每个 tag 都计 +1，可同时贡献给多个 chip
+      for (const t of tags) {
+        primaryCounter.set(t, (primaryCounter.get(t) || 0) + 1);
+      }
     }
   }
 
@@ -231,14 +278,22 @@ const tagTree = computed<{ nodes: TagNode[]; uncategorizedCount: number }>(() =>
           checked: selected.has(childTag),
         }));
 
-      // 2) 计算「其它」虚拟子标签的条目数：tags[0]=tag 且 tags[1:] 没有任何项落在 visibleSet
+      // 2) 计算「其它」虚拟子标签的条目数
+      //    - useConfig：tags 含 tag 且其它 tags 均不在 visibleSet
+      //    - 旧行为：  tags[0]==tag 且 tags[1:] 均不在 visibleSet
       let otherCount = 0;
       for (const entry of props.entries) {
         const ts = (entry.tags || []).filter((t) => !!t);
-        if (ts.length === 0 || ts[0] !== tag) continue;
+        if (ts.length === 0) continue;
+        if (useConfig) {
+          if (!ts.includes(tag)) continue;
+        } else {
+          if (ts[0] !== tag) continue;
+        }
         let hit = false;
-        for (let i = 1; i < ts.length; i++) {
-          if (visibleSet.has(ts[i])) { hit = true; break; }
+        for (const t of ts) {
+          if (t === tag) continue;
+          if (visibleSet.has(t)) { hit = true; break; }
         }
         if (!hit) otherCount += 1;
       }

@@ -251,9 +251,25 @@ export const api = {
   suggestSite(urlOrHost: string): Promise<SiteSuggestion> {
     return invoke("suggest_site", { urlOrHost });
   },
-  /** 导出合并后的完整词典到指定路径，返回条目数。filterTags 为空数组时导出全部，excludeTags 排除指定标签 */
-  exportSiteCatalog(path: string, filterTags: string[] = [], excludeTags: string[] = []): Promise<number> {
-    return invoke("export_site_catalog", { path, filterTags, excludeTags });
+  /** 导出合并后的完整词典到指定路径，返回条目数。
+   *  - filterTags 为空数组时导出全部，非空时仅导出含任一指定标签的条目
+   *  - excludeTags 排除含任一指定标签的条目
+   *  - vaultOverride 为 true 时用密库标签覆盖同 host 词典标签
+   *  - scope: "all" 全部 / "used" 仅密库已用 host / "unused" 仅密库未用 host */
+  exportSiteCatalog(
+    path: string,
+    filterTags: string[] = [],
+    excludeTags: string[] = [],
+    vaultOverride = false,
+    scope: "all" | "used" | "unused" = "all",
+  ): Promise<number> {
+    return invoke("export_site_catalog", {
+      path,
+      filterTags,
+      excludeTags,
+      vaultOverride,
+      scope,
+    });
   },
   /** 列出词典中所有出现过的标签（去重、排序） */
   listCatalogTags(): Promise<string[]> {
@@ -270,6 +286,48 @@ export const api = {
   /** 用户是否有自定义词典数据 */
   hasUserCatalog(): Promise<boolean> {
     return invoke("has_user_catalog");
+  },
+  /** 列出全部预制身份词典（base / developer / game-dev / cross-border / creator / small-biz / crypto） */
+  listPresetPersonas(): Promise<PresetPersonaInfo[]> {
+    return invoke("list_preset_personas");
+  },
+  /**
+   * 把指定预制身份词典并入用户词典层。
+   * - overrideTags=false（默认）：同 host 已存在 → 保留用户当前 tags 不变
+   * - overrideTags=true：同 host 已存在 → 用预制 name+tags 覆盖
+   *
+   * @deprecated 请使用 `importPresetPersona`。该方法保留以兼容旧版本。
+   */
+  importPresetCatalog(
+    persona: string,
+    overrideTags: boolean,
+  ): Promise<PresetImportResult> {
+    return invoke("import_preset_catalog", { persona, overrideTags });
+  },
+  /**
+   * 把指定身份的「站点全集 + primary_tags」并入用户词典层。
+   *
+   * 行为：
+   * - 把 sites.json 全集合并进用户词典（按 overrideTags 三态归类）
+   * - 把对应 persona 的 primary_tags 追加到用户 primary_tags（去重）
+   */
+  importPresetPersona(
+    personaId: string,
+    overrideTags: boolean,
+  ): Promise<PresetImportResult> {
+    return invoke("import_preset_persona", { personaId, overrideTags });
+  },
+  /** 列出合并视图（builtin + user）中所有出现过的标签 + 频次 + 是否一级 */
+  listCatalogTagStats(): Promise<CatalogTagStat[]> {
+    return invoke("list_catalog_tag_stats");
+  },
+  /** 获取用户选择的一级标签集合（来自用户词典 _meta.primary_tags） */
+  getUserPrimaryTags(): Promise<string[]> {
+    return invoke("get_user_primary_tags");
+  },
+  /** 保存用户选择的一级标签集合（覆盖式更新，去重） */
+  setUserPrimaryTags(tags: string[]): Promise<void> {
+    return invoke("set_user_primary_tags", { tags });
   },
   // 主密码管理
   verifyMasterPassword(password: string): Promise<boolean> {
@@ -388,6 +446,39 @@ export interface SiteSuggestion {
   name: string;
   tags: string[];
   matched: string;
+}
+
+export interface PresetPersonaInfo {
+  /** 身份标识，如 "base" / "game-dev" */
+  persona: string;
+  /** 词典描述（来自 _meta.description） */
+  description: string;
+  /** 站点条目数 */
+  site_count: number;
+  /** 一级标签（来自 _meta.primary_tags） */
+  primary_tags: string[];
+  /** 是否社区扩展词典（如 crypto） */
+  community: boolean;
+  /** UI 是否默认勾选 */
+  default_enabled: boolean;
+}
+
+export interface PresetImportResult {
+  /** host 不存在 → 新增 */
+  added: number;
+  /** host 已存在 && overrideTags=true → 用预制覆盖 */
+  overwritten: number;
+  /** host 已存在 && overrideTags=false → 保留用户数据 */
+  kept: number;
+}
+
+export interface CatalogTagStat {
+  /** 标签名 */
+  tag: string;
+  /** 该标签在合并视图中出现的频次 */
+  count: number;
+  /** 是否被用户选定为一级标签 */
+  is_primary: boolean;
 }
 
 // ========== 账号模板（v2.0+） ==========

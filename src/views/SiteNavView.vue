@@ -26,6 +26,8 @@ const allData = ref<PasswordSummary[]>([]);
 const searchQuery = ref("");
 /** 单选标签数组（最多一项），与 TagSidebar 统一接口 */
 const selectedTags = ref<string[]>([]);
+/** 用户在「标签词典」勾选的一级标签集合 */
+const primaryTags = ref<string[]>([]);
 
 const { findRule } = useCustomTagRules();
 
@@ -103,12 +105,19 @@ const entriesWithUrl = computed(() =>
 /** 过滤后的条目（标签筛选：tags 数组包含选中标签即匹配，无论位置） */
 const filteredEntries = computed(() => {
   let result = entriesWithUrl.value;
+  const primarySet = new Set(primaryTags.value);
   // 标签筛选
   if (selectedTag.value === UNCATEGORIZED_TAG) {
-    result = result.filter((e) => !((e.tags || []).find((t) => !!t)));
+    // 「未分类」：用户已配置一级标签时，指 tags 不含任何一级标签的条目；
+    // 未配置时，回退到「无任何 tag」语义。
+    if (primarySet.size > 0) {
+      result = result.filter((e) => !((e.tags || []).some((t) => primarySet.has(t))));
+    } else {
+      result = result.filter((e) => !((e.tags || []).find((t) => !!t)));
+    }
   } else if (isOtherSubSentinel(selectedTag.value)) {
-    const visibleMap = computeVisibleChildrenMap(entriesWithUrl.value);
-    result = result.filter((e) => entryMatchesOtherSub(e, selectedTag.value, visibleMap));
+    const visibleMap = computeVisibleChildrenMap(entriesWithUrl.value, undefined, primarySet);
+    result = result.filter((e) => entryMatchesOtherSub(e, selectedTag.value, visibleMap, primarySet));
   } else if (isCustomTagSentinel(selectedTag.value)) {
     const rule = findRule(ruleIdOfSentinel(selectedTag.value));
     if (rule) {
@@ -144,22 +153,28 @@ interface PrimaryGroup {
   subgroups: SubGroup[];
 }
 
-/** 在指定一级分组内，按 tags[1] 拆分子组：
+/** 在指定一级分组内，按二级标签拆分子组：
  * - visibleSubs 给出该一级分组下「频次 ≥ 阈值」的二级标签集合（与左侧 TagSidebar 对齐）
- * - 不在 visibleSubs 内的二级标签 / 无 tags[1] 的条目 → 「其它」子组
+ * - 不在 visibleSubs 内的二级标签 / 无可用二级标签的条目 → 「其它」子组
+ * - primary 给定时（用户已配置一级标签场景），子标签从 entry.tags 中除 primary 外挑选；
+ *   未给定时（旧路径），保留 tags[1:] 行为。
  * - 子组排序：按条目数降序，「其它」固定排末尾
  */
-function buildSubgroups(entries: PasswordSummary[], visibleSubs?: Set<string>): SubGroup[] {
+function buildSubgroups(
+  entries: PasswordSummary[],
+  visibleSubs?: Set<string>,
+  primary?: string,
+): SubGroup[] {
   const map: Record<string, PasswordSummary[]> = {};
   for (const e of entries) {
     const ts = (e.tags || []).filter((t) => !!t);
+    const candidates = primary ? ts.filter((t) => t !== primary) : ts.slice(1);
     let sub = OTHER_SUB_TAG;
     if (visibleSubs) {
-      // 在 tags[1:] 中找第一个落入 visibleSubs 的标签
-      const hit = ts.slice(1).find((t) => visibleSubs.has(t));
+      const hit = candidates.find((t) => visibleSubs.has(t));
       if (hit) sub = hit;
-    } else if (ts.length >= 2 && ts[1]) {
-      sub = ts[1];
+    } else if (candidates.length > 0 && candidates[0]) {
+      sub = candidates[0];
     }
     if (!map[sub]) map[sub] = [];
     map[sub].push(e);
@@ -175,13 +190,18 @@ function buildSubgroups(entries: PasswordSummary[], visibleSubs?: Set<string>): 
 }
 
 /** 按标签分组（两级）：
- * - 一级：tags[0]，无则归入"未分类"
- * - 二级：tags[1]，无则归入"其它"（在所属一级组内）
- * - 选中具体标签时：单一一级分组，内部仍按 tags[1] 细分
+ * - 一级：用户在「标签词典」勾选的 primary_tags。
+ *   一个条目的 tags 命中多个一级标签时，会在多个分组中重复出现（交叉归属）。
+ *   未配置时回退为 tags[0]，保持向后兼容。
+ * - 二级：在所属一级分组内，从 entry.tags 中除一级外挑选第一个落入 visibleSubs 的标签；
+ *   无可用二级标签则归入「其它」。
+ * - 选中具体标签时：单一一级分组，内部仍按二级细分
  */
 const groupedEntries = computed<PrimaryGroup[]>(() => {
-  // 全局阈值可见子标签集（与左侧 TagSidebar 对齐：频次 ≥ CHILD_MIN_COUNT 的 tags[1:] 才独立显示）
-  const visibleMap = computeVisibleChildrenMap(entriesWithUrl.value);
+  const primarySet = new Set(primaryTags.value);
+  const useConfig = primarySet.size > 0;
+  // 全局阈值可见子标签集（与左侧 TagSidebar 对齐：频次 ≥ CHILD_MIN_COUNT 的标签才独立显示）
+  const visibleMap = computeVisibleChildrenMap(entriesWithUrl.value, undefined, primarySet);
 
   // 选中具体标签：单一一级分组，内部保留二级分组
   if (selectedTag.value && selectedTag.value !== UNCATEGORIZED_TAG) {
@@ -190,7 +210,7 @@ const groupedEntries = computed<PrimaryGroup[]>(() => {
       const rule = findRule(ruleIdOfSentinel(selectedTag.value));
       groupTitle = rule ? rule.name : "自定义筛选";
     } else if (isOtherSubSentinel(selectedTag.value)) {
-      // 「其它」虚拟标签：所有命中条目作为单一分组展示，不再按 tags[1] 细分
+      // 「其它」虚拟标签：所有命中条目作为单一分组展示，不再按二级细分
       groupTitle = `${primaryOfOtherSub(selectedTag.value)} · 其它`;
       return [{
         tag: groupTitle,
@@ -198,12 +218,12 @@ const groupedEntries = computed<PrimaryGroup[]>(() => {
         subgroups: [{ tag: OTHER_SUB_TAG, entries: filteredEntries.value }],
       }];
     }
-    // 选中真实一级标签时，该分组内沿用全局可见集做二级细分
+    // 选中真实标签时，该分组内沿用全局可见集做二级细分
     const visibleForThis = visibleMap.get(selectedTag.value);
     return [{
       tag: groupTitle,
       count: filteredEntries.value.length,
-      subgroups: buildSubgroups(filteredEntries.value, visibleForThis),
+      subgroups: buildSubgroups(filteredEntries.value, visibleForThis, selectedTag.value),
     }];
   }
   if (selectedTag.value === UNCATEGORIZED_TAG) {
@@ -213,13 +233,36 @@ const groupedEntries = computed<PrimaryGroup[]>(() => {
       subgroups: [{ tag: OTHER_SUB_TAG, entries: filteredEntries.value }],
     }];
   }
-  // 未选标签：按 tags[0] 一级聚合
+  // 未选标签：按一级标签集合聚合
+  // - useConfig：一个条目命中多个一级标签时，在每个对应分组都重复出现
+  // - 未配置：不分级 — 所有出现过的 tag 都是独立分组（条目按 tag 重复归入），分组内不再二级细分
   const groups: Record<string, PasswordSummary[]> = {};
+  const uncategorized: PasswordSummary[] = [];
   for (const entry of filteredEntries.value) {
-    const tag = (entry.tags && entry.tags.length > 0 && entry.tags[0]) ? entry.tags[0] : "未分类";
-    if (!groups[tag]) groups[tag] = [];
-    groups[tag].push(entry);
+    const ts = (entry.tags || []).filter((t) => !!t);
+    if (useConfig) {
+      const myPrimaries = ts.filter((t) => primarySet.has(t));
+      if (myPrimaries.length === 0) {
+        uncategorized.push(entry);
+        continue;
+      }
+      for (const p of myPrimaries) {
+        if (!groups[p]) groups[p] = [];
+        groups[p].push(entry);
+      }
+    } else {
+      // 未配置一级标签：完全不分级，每个 tag 都是独立分组
+      if (ts.length === 0) {
+        uncategorized.push(entry);
+        continue;
+      }
+      for (const t of ts) {
+        if (!groups[t]) groups[t] = [];
+        groups[t].push(entry);
+      }
+    }
   }
+  if (uncategorized.length > 0) groups["未分类"] = uncategorized;
   // 与左侧 TagSidebar 排序一致：按最近使用，"未分类" 放最后
   const recentOrder = recentTags.value;
   const sorted = Object.entries(groups).sort(([a], [b]) => {
@@ -235,10 +278,10 @@ const groupedEntries = computed<PrimaryGroup[]>(() => {
   return sorted.map(([tag, items]) => ({
     tag,
     count: items.length,
-    // 默认视图：频次 ≥ 阈值的二级标签独立子组，其余汇总到「其它」
-    subgroups: tag === "未分类"
+    // useConfig：分组内按二级细分；未配置：不细分（无"一级"概念，避免再分层）
+    subgroups: tag === "未分类" || !useConfig
       ? [{ tag: OTHER_SUB_TAG, entries: items }]
-      : buildSubgroups(items, visibleMap.get(tag)),
+      : buildSubgroups(items, visibleMap.get(tag), tag),
   }));
 });
 
@@ -246,7 +289,12 @@ const groupedEntries = computed<PrimaryGroup[]>(() => {
 async function loadData() {
   loading.value = true;
   try {
-    allData.value = await api.listPasswords();
+    const [list, primary] = await Promise.all([
+      api.listPasswords(),
+      api.getUserPrimaryTags().catch(() => [] as string[]),
+    ]);
+    allData.value = list;
+    primaryTags.value = primary;
   } catch (e: any) {
     message.error(`加载数据失败: ${e}`);
   } finally {
@@ -351,6 +399,7 @@ onMounted(loadData);
     <TagSidebar
       :entries="entriesWithUrl"
       :selected-tags="selectedTags"
+      :primary-tags="primaryTags"
       sort-mode="recent"
       :recent-tags-key="RECENT_TAGS_KEY"
       @update:selected-tags="v => selectedTags = v"

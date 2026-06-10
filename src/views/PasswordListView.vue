@@ -99,15 +99,23 @@ const filtered = computed<PasswordSummary[]>(() => {
       .map((t) => findRule(ruleIdOfSentinel(t)))
       .filter((r): r is NonNullable<typeof r> => !!r);
     const otherSubSentinels = selectedTags.value.filter((t) => isOtherSubSentinel(t));
+    const primarySet = new Set(primaryTags.value);
     const visibleChildrenMap = otherSubSentinels.length > 0
-      ? computeVisibleChildrenMap(data.value)
+      ? computeVisibleChildrenMap(data.value, undefined, primarySet)
       : null;
     const realTags = selectedTags.value.filter(
       (t) => t !== UNCATEGORIZED_TAG && !isCustomTagSentinel(t) && !isOtherSubSentinel(t),
     );
     result = result.filter((row) => {
       const tags = (row.tags || []).filter((t) => !!t);
-      const matchUncategorized = wantUncategorized && tags.length === 0;
+      // 「未分类」语义：
+      //  - 用户已配置一级标签时：条目的 tags 不含任何一级标签
+      //  - 未配置时（全空）：条目无任何 tag
+      const matchUncategorized = wantUncategorized && (
+        primarySet.size > 0
+          ? !tags.some((t) => primarySet.has(t))
+          : tags.length === 0
+      );
       const matchReal = realTags.length > 0 && tags.some((t) => realTags.includes(t));
       const matchCustom =
         customSelected.length > 0 &&
@@ -115,7 +123,7 @@ const filtered = computed<PasswordSummary[]>(() => {
       const matchOtherSub =
         otherSubSentinels.length > 0 &&
         visibleChildrenMap !== null &&
-        otherSubSentinels.some((s) => entryMatchesOtherSub(row, s, visibleChildrenMap));
+        otherSubSentinels.some((s) => entryMatchesOtherSub(row, s, visibleChildrenMap, primarySet));
       return matchUncategorized || matchReal || matchCustom || matchOtherSub;
     });
   }
@@ -319,13 +327,21 @@ function openHistory(row: PasswordSummary) {
 async function loadData() {
   loading.value = true;
   try {
-    data.value = await api.listPasswords();
+    const [list, primary] = await Promise.all([
+      api.listPasswords(),
+      api.getUserPrimaryTags().catch(() => [] as string[]),
+    ]);
+    data.value = list;
+    primaryTags.value = primary;
   } catch (e: any) {
     message.error(`加载失败: ${e}`);
   } finally {
     loading.value = false;
   }
 }
+
+/** 用户在「标签词典」勾选的一级标签集合 */
+const primaryTags = ref<string[]>([]);
 
 async function loadTemplates() {
   try {
@@ -679,7 +695,7 @@ onMounted(async () => {
 
 <template>
   <div class="pwd-page">
-    <TagSidebar :entries="data" :selected-tags="selectedTags" @update:selected-tags="v => selectedTags = v" />
+    <TagSidebar :entries="data" :selected-tags="selectedTags" :primary-tags="primaryTags" @update:selected-tags="v => selectedTags = v" />
     <div class="pwd-main">
     <div class="toolbar">
       <div class="toolbar-left">
